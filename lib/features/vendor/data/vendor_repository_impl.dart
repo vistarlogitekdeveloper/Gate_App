@@ -47,11 +47,21 @@ class VendorRepositoryImpl implements VendorRepository {
         .map(Vendor.fromJson)
         .toList();
 
-    final pagination = response['pagination'];
+    // The server currently double-wraps the pagination object:
+    //   { "pagination": { "pagination": { "limit": ..., "offset": ..., "count": ... } } }
+    // Handle both shapes so we're forward-compatible when the backend flattens
+    // it, and so paging works today.
+    final rawPagination = response['pagination'];
+    Map<String, dynamic>? pagination;
+    if (rawPagination is Map<String, dynamic>) {
+      final inner = rawPagination['pagination'];
+      pagination = inner is Map<String, dynamic> ? inner : rawPagination;
+    }
+
     int limit = query.limit;
     int offset = query.offset;
     int count = vendors.length;
-    if (pagination is Map<String, dynamic>) {
+    if (pagination != null) {
       limit = _asInt(pagination['limit']) ?? limit;
       offset = _asInt(pagination['offset']) ?? offset;
       count = _asInt(pagination['count']) ?? count;

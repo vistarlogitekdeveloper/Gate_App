@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
+import '../../../core/auth/session_controller.dart';
+import '../../../core/auth/session_state.dart';
 import '../../../core/ui/responsive.dart';
 import '../../../core/ui/widgets/ribbon.dart';
 import '../../../core/ui/widgets/section_header.dart';
@@ -215,7 +217,13 @@ class _VendorMasterPageState extends ConsumerState<VendorMasterPage> {
               error: (e, _) => _ErrorBanner(message: e.toString()),
               data: (result) {
                 if (result.vendors.isEmpty) {
-                  return const _EmptyState();
+                  final hasFilter = (query.query?.trim().isNotEmpty ?? false) ||
+                      query.vendorType != null ||
+                      query.isActive != null;
+                  return _EmptyState(
+                    hasActiveFilter: hasFilter,
+                    onRetry: () => ref.invalidate(vendorListProvider),
+                  );
                 }
                 return mob
                     // Virtualised: ListView.builder only materialises cards
@@ -603,14 +611,40 @@ class _StatusChip extends StatelessWidget {
   }
 }
 
-class _EmptyState extends StatelessWidget {
-  const _EmptyState();
+class _EmptyState extends ConsumerWidget {
+  final bool hasActiveFilter;
+  final VoidCallback onRetry;
+
+  const _EmptyState({
+    required this.hasActiveFilter,
+    required this.onRetry,
+  });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
+    final session = ref.watch(sessionControllerProvider);
+    // When no filter is active and the server still returned zero rows, this
+    // is almost always a backend / data / scoping problem — surface the
+    // organization code so the user can tell the admin exactly which tenant
+    // has no vendors, instead of just staring at a blank screen.
+    final orgCode = session is Authenticated ? session.organization.code : null;
+
+    final title = hasActiveFilter
+        ? 'No vendors match your filters'
+        : 'No vendors available';
+    final subtitle = hasActiveFilter
+        ? 'Try clearing the search / filter chips above, or add a new vendor.'
+        : orgCode != null && orgCode.isNotEmpty
+            ? 'The server returned zero vendors for organization "$orgCode". '
+                'This usually means the vendor master has not been synced or '
+                'the tenant has no vendors yet. Contact your admin, or retry '
+                'in case of a transient sync delay.'
+            : 'The server returned zero vendors. Contact your admin to verify '
+                'the vendor master has been synced.';
+
     return Container(
-      padding: const EdgeInsets.all(32),
+      padding: const EdgeInsets.all(28),
       decoration: BoxDecoration(
         color: theme.colorScheme.surface,
         borderRadius: BorderRadius.circular(16),
@@ -621,20 +655,31 @@ class _EmptyState extends StatelessWidget {
       child: Center(
         child: Column(
           children: [
-            Icon(Icons.inbox_outlined,
-                size: 40, color: theme.colorScheme.onSurfaceVariant),
+            Icon(
+              hasActiveFilter ? Icons.filter_alt_off_outlined : Icons.inbox_outlined,
+              size: 40,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
             const SizedBox(height: 8),
             Text(
-              'No vendors found',
+              title,
+              textAlign: TextAlign.center,
               style: theme.textTheme.titleMedium
                   ?.copyWith(fontWeight: FontWeight.w700),
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: 6),
             Text(
-              'Try adjusting your search or add a new vendor.',
+              subtitle,
+              textAlign: TextAlign.center,
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),
+            ),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: onRetry,
+              icon: const Icon(Icons.refresh, size: 18),
+              label: const Text('Retry'),
             ),
           ],
         ),
