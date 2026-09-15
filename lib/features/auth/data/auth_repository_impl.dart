@@ -245,6 +245,36 @@ _ParsedLoginPayload _parseLoginPayload(
     );
   }
 
+  // Defensive tenant-mismatch guard.
+  //
+  // If a user types organizationCode="DEFAULT" but the server authenticates
+  // them into organizationCode="TEST" (as observed in prod on 2026-09-15),
+  // every subsequent tenant-scoped call — /vendor-master, /gate-entries,
+  // /reports/* — silently operates against the wrong org's data. The most
+  // visible symptom is empty vendor/entry lists; the more dangerous symptom
+  // is a guard entering a real gate entry that lands in a test tenant.
+  //
+  // Refuse to complete login if the codes don't match (case-insensitively,
+  // trimmed) so the user knows their credentials don't belong to the org
+  // they asked to sign into. This is a server bug (the login handler should
+  // reject or return the requested org), but until it's fixed the client
+  // must surface it instead of silently accepting a different tenant.
+  final requestedCode = request.organizationCode.trim().toUpperCase();
+  final returnedCode = organizationCode.trim().toUpperCase();
+  if (requestedCode.isNotEmpty &&
+      returnedCode.isNotEmpty &&
+      requestedCode != returnedCode) {
+    return _ParsedLoginPayload(
+      error:
+          'You tried to sign in to organization "${request.organizationCode}", '
+          'but the server authenticated you into "$organizationCode" '
+          '($organizationName). This means these credentials do not belong to '
+          '"${request.organizationCode}". Ask your admin for credentials that '
+          'match your organization, or contact the backend team if you believe '
+          'this is a login bug.',
+    );
+  }
+
   return _ParsedLoginPayload(
     token: token,
     role: role,
