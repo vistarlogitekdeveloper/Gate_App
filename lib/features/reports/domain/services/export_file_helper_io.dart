@@ -15,32 +15,35 @@ class _ExportFileHelperIo implements ExportFileHelper {
     required List<int> bytes,
     required String mimeType,
   }) async {
+    final uniqueName = _withTimestamp(fileName);
+
     if (Platform.isAndroid) {
-      final saved = await _saveToAndroidDownloads(
-        fileName: fileName,
+      await _saveToAndroidDownloads(
+        fileName: uniqueName,
         bytes: bytes,
         mimeType: mimeType,
       );
-      if (!saved) {
-        throw Exception('Could not save file to Downloads folder');
-      }
       return;
     }
 
-    // On iOS, direct saving to a public generic Downloads folder is not supported natively 
-    // without user interaction. Bringing up the Share Sheet (so they can select "Save to Files") is standard.
+    // iOS: no public Downloads folder without user interaction. Share sheet
+    // lets the user pick "Save to Files" or any other target.
     final directory = await getTemporaryDirectory();
-    final file = File('${directory.path}/$fileName');
+    final file = File('${directory.path}/$uniqueName');
     await file.create(recursive: true);
     await file.writeAsBytes(bytes, flush: true);
 
     await Share.shareXFiles(
       [XFile(file.path, mimeType: mimeType)],
-      text: 'Exported $fileName',
+      text: 'Exported $uniqueName',
+      // iPad requires a source rect for the popover anchor; the top-left of
+      // the screen is a safe default that avoids the "presented view has no
+      // source view" crash on iOS 17+.
+      sharePositionOrigin: const Rect.fromLTWH(0, 0, 1, 1),
     );
   }
 
-  Future<bool> _saveToAndroidDownloads({
+  Future<void> _saveToAndroidDownloads({
     required String fileName,
     required List<int> bytes,
     required String mimeType,
@@ -54,10 +57,28 @@ class _ExportFileHelperIo implements ExportFileHelper {
           'bytes': Uint8List.fromList(bytes),
         },
       );
-      return savedUri != null && savedUri.isNotEmpty;
-    } catch (e) {
-      return false;
+      if (savedUri == null || savedUri.isEmpty) {
+        throw Exception('Downloads folder returned an empty save path');
+      }
+    } on PlatformException catch (e) {
+      throw Exception(
+        'Could not save file to Downloads folder: ${e.message ?? e.code}',
+      );
     }
+  }
+
+  // Reports currently hardcode names like `GateEntryRegister.xlsx`. Without a
+  // suffix, MediaStore auto-renames on API 29+ (users can't tell which is
+  // which) and legacy Android silently overwrites the prior file. Insert a
+  // timestamp before the extension so each export is uniquely identifiable.
+  String _withTimestamp(String fileName) {
+    final now = DateTime.now();
+    final stamp =
+        '${now.year.toString().padLeft(4, '0')}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}'
+        '_${now.hour.toString().padLeft(2, '0')}${now.minute.toString().padLeft(2, '0')}${now.second.toString().padLeft(2, '0')}';
+    final dot = fileName.lastIndexOf('.');
+    if (dot <= 0) return '${fileName}_$stamp';
+    return '${fileName.substring(0, dot)}_$stamp${fileName.substring(dot)}';
   }
 }
 

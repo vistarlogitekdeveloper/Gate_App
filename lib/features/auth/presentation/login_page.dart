@@ -260,6 +260,8 @@ class _MobileForm extends StatelessWidget {
                   child: Image.asset(
                     VistarAssets.sMark,
                     fit: BoxFit.contain,
+                    cacheWidth: 168,
+                    cacheHeight: 168,
                     errorBuilder: (_, __, ___) =>
                         const Icon(Icons.flash_on, color: VistarTokens.pink),
                   ),
@@ -271,6 +273,7 @@ class _MobileForm extends StatelessWidget {
                   VistarAssets.wordmark,
                   height: 40,
                   fit: BoxFit.contain,
+                  cacheHeight: 120,
                   errorBuilder: (_, __, ___) => Text(
                     'Vistar',
                     style: Theme.of(context)
@@ -325,6 +328,8 @@ class _ArtPanel extends StatelessWidget {
                   child: Image.asset(
                     VistarAssets.sMark,
                     fit: BoxFit.contain,
+                    cacheWidth: 760,
+                    cacheHeight: 760,
                     errorBuilder: (_, __, ___) => const SizedBox.shrink(),
                   ),
                 ),
@@ -341,6 +346,7 @@ class _ArtPanel extends StatelessWidget {
                   VistarAssets.wordmark,
                   height: 50,
                   fit: BoxFit.contain,
+                  cacheHeight: 150,
                   errorBuilder: (_, __, ___) => Text(
                     'Vistar',
                     style: theme.textTheme.headlineMedium

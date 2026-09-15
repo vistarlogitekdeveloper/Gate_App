@@ -81,6 +81,8 @@ class _VistarCardState extends State<VistarCard> {
                       width: 120,
                       height: 120,
                       fit: BoxFit.contain,
+                      cacheWidth: 360,
+                      cacheHeight: 360,
                       errorBuilder: (_, __, ___) => const SizedBox.shrink(),
                     ),
                   ),

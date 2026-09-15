@@ -95,10 +95,13 @@ class GateEntryController extends StateNotifier<GateEntryState> {
   /// only the per-request batch size, not a cap on total results returned.
   static const int searchResultLimit = 100;
 
-  /// Safety valve so a runaway backend can't spin us forever. 200 pages ×
-  /// 100 rows = 20k rows per search term, well above any realistic vendor
-  /// or challan search on a live tenant.
-  static const int _searchMaxPages = 200;
+  /// Cap search fan-out to a handful of pages per fan (q + vendor). Previously
+  /// this was 200 (20k rows/term), which pinned the main isolate on
+  /// `.fromJson` for many seconds on slow gate WiFi and was reported as
+  /// day-to-day slowness. Five pages × two fans × 100 rows = up to 1000 rows
+  /// per search — enough for any realistic dispatch/vendor query. Users who
+  /// need more should filter by date or add more terms.
+  static const int _searchMaxPages = 5;
 
   /// Monotonic token so a slow in-flight request can't clobber a newer one.
   int _requestSeq = 0;

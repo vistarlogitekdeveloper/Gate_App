@@ -86,6 +86,11 @@ class _StatCardState extends State<StatCard> {
                       width: 100,
                       height: 100,
                       fit: BoxFit.contain,
+                      // logo.png is a 2 MB, ~4k-square PNG. Without cacheWidth
+                      // Flutter decodes the full bitmap into memory for every
+                      // StatCard on the dashboard, dominating startup time.
+                      cacheWidth: 300,
+                      cacheHeight: 300,
                       errorBuilder: (_, __, ___) => const SizedBox.shrink(),
                     ),
                   ),

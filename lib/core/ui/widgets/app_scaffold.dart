@@ -223,6 +223,8 @@ class _DesktopSidebar extends StatelessWidget {
                   child: Image.asset(
                     VistarAssets.sMark,
                     fit: BoxFit.contain,
+                    cacheWidth: 132,
+                    cacheHeight: 132,
                     errorBuilder: (_, __, ___) => const Icon(
                       Icons.flash_on,
                       color: VistarTokens.pink,

@@ -114,6 +114,33 @@ class ReportExportService {
       mimeType: 'application/pdf',
     );
   }
+
+  // Vehicle TAT is derived on the client from the gate entry register (Gate
+  // In = entry.date, Gate Out = entry.gateOutDate). The Excel format shared
+  // by the warehouse team uses Dock In / Dock Out, which the backend does not
+  // yet expose — see backend_api_spec.md for the pending fields. For now we
+  // report Gate-TAT (Gate In → Gate Out) with the same shift / after-hours /
+  // "With TAT" / "Out of TAT" derivations as the shared workbook.
+  Future<void> exportVehicleTatReportToExcel(
+      List<GateEntryReportItem> data) async {
+    final bytes = await compute(_buildVehicleTatExcelBytes, data);
+    await _fileHelper.saveAndShare(
+      fileName: 'Vehicle_TAT_Report.xlsx',
+      bytes: bytes,
+      mimeType:
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+  }
+
+  Future<void> exportVehicleTatReportToPdf(
+      List<GateEntryReportItem> data) async {
+    final bytes = await compute(_buildVehicleTatPdfBytes, data);
+    await _fileHelper.saveAndShare(
+      fileName: 'Vehicle_TAT_Report.pdf',
+      bytes: bytes,
+      mimeType: 'application/pdf',
+    );
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -643,6 +670,133 @@ Future<Uint8List> _buildExceptionPdfBytes(
                 .toList(),
             cellFontSize: 7,
             headerFontSize: 8,
+          ),
+      ],
+    ),
+  );
+  return pdf.save();
+}
+
+// ---------- Vehicle TAT ----------
+//
+// The KB Cytiva warehouse workbook uses columns:
+//   DATE, SHIFT, VENDOR NAME, VEHICLE NO, Gate In, Schedule OK,
+//   Dock In, Dock Out, DIDO, Remark1, Remark2, Remark3
+// with derivations:
+//   Remark1 = "With TAT"  if DIDO < 1h else "Out of TAT"
+//   Remark2 = "Vehicle reported after 8:00 PM" if Gate In outside 06:00-20:00
+//
+// The backend does not yet expose Dock In / Dock Out per vehicle, so this
+// report derives shift + after-hours flag from the Gate In timestamp, and
+// uses Gate In → Gate Out as the TAT metric ("Gate TAT"). When the backend
+// adds dock timestamps, wire them here and rename the columns.
+
+String _shiftForGateIn(DateTime? gateIn) {
+  if (gateIn == null) return '';
+  final hour = gateIn.toLocal().hour;
+  if (hour >= 6 && hour < 14) return '1ST';
+  if (hour >= 14 && hour < 22) return '2ND';
+  return '3RD';
+}
+
+String _tatBucket(Duration? tat) {
+  if (tat == null) return '';
+  return tat.inMinutes < 60 ? 'With TAT' : 'Out of TAT';
+}
+
+String _afterHoursFlag(DateTime? gateIn) {
+  if (gateIn == null) return '';
+  final hour = gateIn.toLocal().hour;
+  return (hour >= 20 || hour < 6) ? 'Vehicle reported after 8:00 PM' : '';
+}
+
+Duration? _tatDuration(DateTime? gateIn, DateTime? gateOut) {
+  if (gateIn == null || gateOut == null) return null;
+  final diff = gateOut.difference(gateIn);
+  return diff.isNegative ? null : diff;
+}
+
+String _formatDuration(Duration? d) {
+  if (d == null) return '-';
+  final h = d.inHours;
+  final m = d.inMinutes.remainder(60);
+  return '${h}h ${m}m';
+}
+
+List<int> _buildVehicleTatExcelBytes(List<GateEntryReportItem> data) {
+  final excel = xl.Excel.createExcel();
+  final sheet = excel['Inward TAT'];
+
+  sheet.appendRow([
+    xl.TextCellValue('DATE'),
+    xl.TextCellValue('SHIFT'),
+    xl.TextCellValue('VENDOR NAME'),
+    xl.TextCellValue('VEHICLE NO'),
+    xl.TextCellValue('Gate In Time'),
+    xl.TextCellValue('Gate Out Time'),
+    xl.TextCellValue('TAT (Gate In → Gate Out)'),
+    xl.TextCellValue('Remark 1'),
+    xl.TextCellValue('Remark 2'),
+  ]);
+
+  for (final item in data) {
+    final tat = _tatDuration(item.date, item.gateOutDate);
+    sheet.appendRow([
+      xl.TextCellValue(_formatDate(item.date)),
+      xl.TextCellValue(_shiftForGateIn(item.date)),
+      xl.TextCellValue(item.vendor),
+      xl.TextCellValue(item.vehicleNo),
+      xl.TextCellValue(_formatTime(item.date)),
+      xl.TextCellValue(_formatTime(item.gateOutDate)),
+      xl.TextCellValue(_formatDuration(tat)),
+      xl.TextCellValue(_tatBucket(tat)),
+      xl.TextCellValue(_afterHoursFlag(item.date)),
+    ]);
+  }
+
+  return excel.encode()!;
+}
+
+Future<Uint8List> _buildVehicleTatPdfBytes(
+    List<GateEntryReportItem> data) async {
+  final pdf = pw.Document();
+  pdf.addPage(
+    pw.MultiPage(
+      pageFormat: PdfPageFormat.a4.landscape,
+      margin: const pw.EdgeInsets.all(20),
+      build: (pw.Context context) => [
+        _pdfTitle('Vehicle TAT Report (Inward)'),
+        if (data.isEmpty)
+          _pdfEmpty()
+        else
+          _pdfTable(
+            headers: const [
+              'Date',
+              'Shift',
+              'Vendor',
+              'Vehicle No',
+              'Gate In',
+              'Gate Out',
+              'TAT',
+              'Remark 1',
+              'Remark 2',
+            ],
+            rows: data.map((item) {
+              final tat = _tatDuration(item.date, item.gateOutDate);
+              return [
+                _formatDate(item.date),
+                _shiftForGateIn(item.date),
+                item.vendor,
+                item.vehicleNo,
+                _formatTime(item.date),
+                _formatTime(item.gateOutDate),
+                _formatDuration(tat),
+                _tatBucket(tat),
+                _afterHoursFlag(item.date),
+              ];
+            }).toList(),
+            cellFontSize: 8,
+            headerFontSize: 9,
           ),
       ],
     ),

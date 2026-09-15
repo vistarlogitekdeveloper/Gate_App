@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -104,7 +105,8 @@ final reportsPreviewProvider =
     );
     final search = query.search;
 
-    if (query.reportType == 'Gate Entry Register') {
+    if (query.reportType == 'Gate Entry Register' ||
+        query.reportType == 'Vehicle TAT Report') {
       final data = await repo.getGateEntryRegisterPage(
         filter,
         q: search,
@@ -191,6 +193,7 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
     'Gate Entry Register',
     'GRN Reconciliation Report',
     'Exception Report',
+    'Vehicle TAT Report',
   ];
 
   @override
@@ -289,7 +292,8 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
   }
 
   _ReportPreviewData _previewWithCardFilter(_ReportPreviewData data) {
-    if (_selectedReport == 'Gate Entry Register') {
+    if (_selectedReport == 'Gate Entry Register' ||
+        _selectedReport == 'Vehicle TAT Report') {
       return _ReportPreviewData(
         gateEntries: _applyGateEntryLocalFilter(data.gateEntries),
         gateEntrySummary: data.gateEntrySummary,
@@ -344,7 +348,9 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
   }
 
   bool _usesServerPeriod() {
-    return _selectedReport == 'Gate Entry Register' &&
+    final tatOrRegister = _selectedReport == 'Gate Entry Register' ||
+        _selectedReport == 'Vehicle TAT Report';
+    return tatOrRegister &&
         _startDate == null &&
         _endDate == null &&
         (_gateEntryCardFilter == _todayFilter ||
@@ -384,6 +390,14 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
       vendorFilter: null,
       poFilter: null,
     );
+  }
+
+  String _exportSuccessMessage(String kind) {
+    if (kIsWeb) return '$kind downloaded.';
+    if (defaultTargetPlatform == TargetPlatform.iOS) {
+      return '$kind ready — pick "Save to Files" in the share sheet.';
+    }
+    return '$kind saved to Downloads folder. Check your File Manager.';
   }
 
   void _exportExcel() async {
@@ -444,14 +458,25 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
           throw Exception('No data available for the selected filters.');
         }
         await _exportService.exportExceptionReportToExcel(data);
+      } else if (_selectedReport == 'Vehicle TAT Report') {
+        var data = await repo.getGateEntryRegister(
+          filter,
+          q: search.isEmpty ? null : search,
+          period: _usesServerPeriod() ? _periodForGateEntryFilter() : null,
+        );
+        data = _applyGateEntryLocalFilter(data);
+        if (data.isEmpty) {
+          throw Exception('No data available for the selected filters.');
+        }
+        await _exportService.exportVehicleTatReportToExcel(data);
       }
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text('Excel saved to Downloads folder. Check your File Manager.'),
-              backgroundColor: Color(0xFF16A34A),
-              duration: Duration(seconds: 4)),
+          SnackBar(
+              content: Text(_exportSuccessMessage('Excel')),
+              backgroundColor: const Color(0xFF16A34A),
+              duration: const Duration(seconds: 4)),
         );
       }
     } catch (e) {
@@ -524,14 +549,25 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
           throw Exception('No data available for the selected filters.');
         }
         await _exportService.exportExceptionReportToPdf(data);
+      } else if (_selectedReport == 'Vehicle TAT Report') {
+        var data = await repo.getGateEntryRegister(
+          filter,
+          q: search.isEmpty ? null : search,
+          period: _usesServerPeriod() ? _periodForGateEntryFilter() : null,
+        );
+        data = _applyGateEntryLocalFilter(data);
+        if (data.isEmpty) {
+          throw Exception('No data available for the selected filters.');
+        }
+        await _exportService.exportVehicleTatReportToPdf(data);
       }
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text('PDF saved to Downloads folder. Check your File Manager.'),
-              backgroundColor: Color(0xFFDC2626),
-              duration: Duration(seconds: 4)),
+          SnackBar(
+              content: Text(_exportSuccessMessage('PDF')),
+              backgroundColor: const Color(0xFFDC2626),
+              duration: const Duration(seconds: 4)),
         );
       }
     } catch (e) {
@@ -579,8 +615,10 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
     // full network fetch (incl. the gate-entries enrichment join) just to
     // re-apply an in-memory substring filter. Gate Entry Register searches on
     // the server (q param), so it keeps search in the key.
-    final searchForKey =
-        _selectedReport == 'Gate Entry Register' ? search : '';
+    final searchForKey = (_selectedReport == 'Gate Entry Register' ||
+            _selectedReport == 'Vehicle TAT Report')
+        ? search
+        : '';
     final query = _ReportQuery(
       reportType: _selectedReport,
       startDate: _startDate,
@@ -660,7 +698,8 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
                         ),
                       ),
                     ),
-                    if (_selectedReport == 'Gate Entry Register') ...[
+                    if (_selectedReport == 'Gate Entry Register' ||
+                        _selectedReport == 'Vehicle TAT Report') ...[
                       const SizedBox(height: 12),
                       _buildGateEntryPagination(context, isMob, effectiveData),
                     ],
@@ -914,6 +953,9 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
     if (_selectedReport == 'Gate Entry Register') {
       scopeText =
           'Showing Gate Entry data. Search checks vendor, PO, challan, and gate entry number.';
+    } else if (_selectedReport == 'Vehicle TAT Report') {
+      scopeText =
+          'Showing Vehicle TAT derived from gate entries. TAT = Gate Out − Gate In. Dock In/Out will use backend timestamps once available.';
     } else if (_selectedReport == 'GRN Reconciliation Report') {
       scopeText =
           'Showing Reconciliation data. Search checks vendor, PO, challan, gate entry number, and GRN fields.';
@@ -956,7 +998,8 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
   ) {
     final tiles = <Widget>[];
 
-    if (_selectedReport == 'Gate Entry Register') {
+    if (_selectedReport == 'Gate Entry Register' ||
+        _selectedReport == 'Vehicle TAT Report') {
       final summary = data.gateEntrySummary;
 
       final cards = [
@@ -1439,7 +1482,8 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
     bool isMob,
     _ReportPreviewData data,
   ) {
-    if (_selectedReport == 'Gate Entry Register') {
+    if (_selectedReport == 'Gate Entry Register' ||
+        _selectedReport == 'Vehicle TAT Report') {
       if (data.gateEntries.isEmpty) {
         return _buildEmptyState(context);
       }
@@ -1773,6 +1817,8 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
         return 'GRN Reco';
       case 'Exception Report':
         return 'Exception';
+      case 'Vehicle TAT Report':
+        return 'Vehicle TAT';
       default:
         return reportType;
     }

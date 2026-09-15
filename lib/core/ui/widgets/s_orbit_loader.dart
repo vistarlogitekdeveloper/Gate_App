@@ -126,6 +126,8 @@ class _SOrbitLoaderState extends State<SOrbitLoader>
                   width: sMarkSize,
                   height: sMarkSize,
                   fit: BoxFit.contain,
+                  cacheWidth: (sMarkSize * 3).ceil(),
+                  cacheHeight: (sMarkSize * 3).ceil(),
                   errorBuilder: (_, __, ___) => Icon(
                     Icons.flash_on,
                     size: sMarkSize,

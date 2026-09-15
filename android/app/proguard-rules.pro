@@ -51,6 +51,26 @@
     @io.flutter.plugin.common.MethodCallHandler *;
 }
 
+# ---------- Our own MainActivity + MethodChannel handler ----------
+# The `gate_reco/files` channel writes reports to Downloads via MediaStore.
+# MainActivity is referenced from AndroidManifest so the class survives, but
+# R8 can still rename/inline the Kotlin lambda's captured private methods
+# (saveFileToDownloads/saveFileToLegacyDownloads) and their ContentValues/
+# MediaStore call sites — which shows up as reports silently failing to save
+# on release builds. Keep the whole class untouched.
+-keep class com.example.gate_app.** { *; }
+
+# ---------- share_plus + path_provider + printing ----------
+# These plugins live under dev.fluttercommunity.plus.* and dev.ffi.* rather
+# than io.flutter.plugins.*, so the generic Flutter keep above does NOT cover
+# them. Missing these breaks the iOS share sheet fallback and any Android
+# code path that uses temp dirs.
+-keep class dev.fluttercommunity.plus.share.** { *; }
+-keep class dev.fluttercommunity.plus.packageinfo.** { *; }
+-keep class io.flutter.plugins.pathprovider.** { *; }
+-keep class net.nfet.flutter.printing.** { *; }
+-dontwarn dev.fluttercommunity.plus.**
+
 # ---------- Kotlin metadata (used by ML Kit + several plugins) ----------
 -keep class kotlin.Metadata { *; }
 -keepattributes *Annotation*, InnerClasses, EnclosingMethod, Signature, Exceptions

@@ -127,6 +127,10 @@ class _BackgroundLayers extends StatelessWidget {
                       width: 640,
                       height: 640,
                       fit: BoxFit.contain,
+                      // Painted at 3.5% opacity as a background watermark —
+                      // no need to decode the full 4k PNG behind every screen.
+                      cacheWidth: 720,
+                      cacheHeight: 720,
                       errorBuilder: (_, __, ___) => const SizedBox.shrink(),
                     ),
                   ),
