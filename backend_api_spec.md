@@ -159,6 +159,72 @@ Used to populate DataTables before exporting to Excel/PDF.
 - **Audit Trail Report**: `GET /reports/audit-trail`
   - Array containing properties: `date, user, action, entity, changes`
 
+### 5.2 Vehicle TAT Report *(pending backend support)*
+The client (Flutter app) currently ships a client-derived Vehicle TAT export that
+reuses `GET /gate-entries` and reports **Gate TAT = Gate Out − Gate In**. To
+match the warehouse's `Inward TAT` workbook exactly (KB Cytiva format), the
+backend must capture and expose four additional timestamps per gate entry, so
+the client can compute **DIDO = Dock Out − Dock In** — the metric the ops team
+actually tracks.
+
+**Additional fields on the `GateEntry` object**:
+```json
+{
+  "id": "GE-1001",
+  ...existing fields...,
+  "scheduleOkTime": "2026-08-01T06:50:00Z",  // Cleared for scheduling by warehouse exec
+  "dockInTime":      "2026-08-01T07:15:00Z", // Vehicle actually reached the dock
+  "dockOutTime":     "2026-08-01T07:32:00Z", // Vehicle left the dock after unload
+  "shift":           "1ST",                  // Derivable from gate-in, but nice to have server-side canonical value
+  "remarks":         "-"                      // Free-text (Remark 3 in workbook)
+}
+```
+
+**New capture endpoints** (write side — one per lifecycle step):
+- `POST /gate-entries/:id/schedule-ok`
+  - Body: `{ "at": "2026-08-01T06:50:00Z" }` (optional; server may default to now)
+  - Called by: `warehouse_executive`
+- `POST /gate-entries/:id/dock-in`
+  - Body: `{ "at": "2026-08-01T07:15:00Z", "dockNumber": "D-2" }` (dockNumber optional)
+  - Called by: `warehouse_executive`
+- `POST /gate-entries/:id/dock-out`
+  - Body: `{ "at": "2026-08-01T07:32:00Z", "remarks": "-" }`
+  - Called by: `warehouse_executive`
+
+**New read endpoint** (dedicated report, so we're not paging through gate entries):
+- `GET /reports/vehicle-tat?startDate=X&endDate=Y&vendor=Z&shift=1ST|2ND|3RD`
+  - Response: array of rows matching the workbook's 12 columns:
+    ```json
+    [
+      {
+        "date":          "2026-08-01",
+        "shift":         "3RD",
+        "vendorName":    "ESSEM AUTO ELECTRICALS PVT LTD",
+        "vehicleNo":     "MH14LS6236",
+        "gateInTime":    "2026-08-01T12:15:00Z",
+        "scheduleOkTime":"2026-08-01T12:20:00Z",
+        "dockInTime":    "2026-08-02T00:21:00Z",
+        "dockOutTime":   "2026-08-02T00:38:00Z",
+        "didoMinutes":   17,
+        "remark1":       "With TAT",                          // "With TAT" if didoMinutes < 60 else "Out of TAT"
+        "remark2":       "Vehicle reported after 8:00 PM",   // set when gateIn outside 06:00–20:00 local
+        "remark3":       ""                                    // free text
+      }
+    ]
+    ```
+
+**Derivation rules** (server-side, so the report and dashboard agree):
+- `shift`: `1ST` = 06:00-13:59, `2ND` = 14:00-21:59, `3RD` = 22:00-05:59 (local warehouse tz).
+- `remark1`: `didoMinutes < 60 ? "With TAT" : "Out of TAT"`.
+- `remark2`: set the "after 8:00 PM" string iff `gateInLocalHour >= 20 || gateInLocalHour < 6`.
+- `didoMinutes` = null if either dock timestamp missing (client renders "-").
+
+**Client wiring**: once the endpoint above is live, replace the client's derived
+export in [lib/features/reports/domain/services/report_export_service.dart](lib/features/reports/domain/services/report_export_service.dart)
+(`_buildVehicleTatExcelBytes` / `_buildVehicleTatPdfBytes`) with a fetch from
+`GET /reports/vehicle-tat`, and drop the shift/after-hours helpers from the
+client — they'll come from the server.
+
 ---
 
 ## 6. Audit System
