@@ -176,8 +176,13 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
   final _exportService = ReportExportService();
   String _selectedReport = 'Gate Entry Register';
   String _gateEntryCardFilter = _reportAllFilter;
-  int? _gateEntryPage;
-  int? _gateEntryLimit;
+  // Default to a bounded page load. Previously both fields were `null`, which
+  // omitted the `limit` query param entirely and made the server return every
+  // gate entry in the tenant (2.1 MB / 9 s / thousands of render exceptions
+  // observed on 2026-09-15). Pagination controls further down the page let
+  // the user grow this to 50 or 100 rows.
+  int? _gateEntryPage = 1;
+  int? _gateEntryLimit = 20;
   bool _isExportingExcel = false;
   bool _isExportingPdf = false;
 
@@ -808,8 +813,11 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
                           setState(() {
                             _selectedReport = val;
                             _gateEntryCardFilter = _reportAllFilter;
-                            _gateEntryPage = null;
-                            _gateEntryLimit = null;
+                            // Keep pagination bounded when switching report
+                            // types — see comment on the `_gateEntryPage` /
+                            // `_gateEntryLimit` field declarations.
+                            _gateEntryPage = 1;
+                            _gateEntryLimit = 20;
                           });
                         },
                       ),

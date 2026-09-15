@@ -240,13 +240,26 @@ class ReportsRepository {
     int? page,
     int? limit,
   }) async {
+    // Defence in depth against a null `limit` from callers.
+    //
+    // On 2026-09-15, the Reports page was observed shipping `limit: null`
+    // through this call, `_buildQuery(includeLimit: false)` dropped the param
+    // entirely, and the server responded with 2.1 MB / 9.3 s / 5000+ Flutter
+    // exceptions during render because there was no cap at all. Even if a
+    // page-level default lands, always cap here at 100 rows so a future bug
+    // never repeats the same freeze. Server also caps at 100.
+    final effectiveLimit = (limit == null || limit <= 0)
+        ? 100
+        : (limit > 100 ? 100 : limit);
+    final effectivePage = page ?? 1;
+
     final response = await _apiClient.getRaw(
       '/gate-entries',
       queryParameters: _buildQuery(
         filter,
         includeLimit: false,
-        page: page,
-        limit: limit == null ? null : (limit > 100 ? 100 : limit),
+        page: effectivePage,
+        limit: effectiveLimit,
         q: q,
         period: period,
         sortBy: sortBy,
