@@ -58,6 +58,9 @@ dependencies:
   universal_html: ^2.3.0
   data_table_2: ^2.7.2
   excel: ^4.0.6
+  # Direct (already resolved transitively via excel). Used by
+  # lib/features/reports/domain/services/fast_xlsx.dart to zip the sheet XML.
+  archive: ^3.6.1
   pdf: ^3.11.3
   printing: ^5.14.2
   path_provider: ^2.1.5

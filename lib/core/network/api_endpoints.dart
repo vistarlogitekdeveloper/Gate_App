@@ -21,9 +21,18 @@ class ApiEndpoints {
   static const String exceptions = '/reconciliation/exceptions';
 
   // Reports
-  static const String reportGateEntries = '/reports/gate-entries';
+  //
+  // These must match src/modules/gate/dist/routes/report.routes.js. The gate
+  // entry register is '/reports/gate-entry' (singular) — the plural spelling
+  // used here before returned 404, and '/reports/exceptions' has no route at
+  // all, so it is gone rather than left as a trap. Exceptions are served by
+  // [exceptions] above.
+  static const String reportGateEntry = '/reports/gate-entry';
   static const String reportReconciliation = '/reports/reconciliation';
-  static const String reportExceptions = '/reports/exceptions';
+  static const String reportGrnRecon = '/reports/grn-recon';
+  static const String reportPendingGrn = '/reports/pending-grn';
+  static const String reportAuditTrail = '/reports/audit-trail';
+  static const String reportDashboardSummary = '/reports/dashboard-summary';
 
   // SAP / GRN
   static const String grnImport = '/sap/grns/import';

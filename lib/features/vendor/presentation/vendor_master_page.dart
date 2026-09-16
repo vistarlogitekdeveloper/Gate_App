@@ -408,9 +408,17 @@ class _VendorTable extends StatelessWidget {
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(16),
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: DataTable(
+        // A DataTable inside a horizontal scroll view sizes itself to its
+        // intrinsic content width, which left ~325px of dead space to the
+        // right of the card on a wide window. Giving it the card width as a
+        // MINIMUM fills the space while still scrolling when the columns
+        // genuinely need more room than is available.
+        child: LayoutBuilder(
+          builder: (context, constraints) => SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minWidth: constraints.maxWidth),
+              child: DataTable(
             columnSpacing: 24,
             horizontalMargin: 16,
             headingRowHeight: 48,
@@ -459,6 +467,8 @@ class _VendorTable extends StatelessWidget {
                 )),
               ]);
             }).toList(),
+          ),
+            ),
           ),
         ),
       ),

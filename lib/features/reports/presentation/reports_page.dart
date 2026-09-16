@@ -21,6 +21,7 @@ import '../domain/services/report_export_service.dart';
 final DateFormat _kListDateFormat = DateFormat('MMM dd, yyyy - hh:mm a');
 final DateFormat _kShortDateFormat = DateFormat('MMM dd');
 final DateFormat _kDayDateFormat = DateFormat('MMM dd, yyyy');
+final NumberFormat _kRowCountFormat = NumberFormat.decimalPattern();
 
 class _ReportQuery {
   final String reportType;
@@ -185,6 +186,17 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
   int? _gateEntryLimit = 20;
   bool _isExportingExcel = false;
   bool _isExportingPdf = false;
+
+  /// Percent label shown on the export button while a large file is being
+  /// generated; null when idle. Without this the button sat on a bare
+  /// "Generating..." with no way to tell progress from a hang.
+  String? _exportProgress;
+
+  /// Rows rendered at once in the GRN and Exception preview tables.
+  /// DataTable is not virtualised, so the whole page is built eagerly.
+  static const int _clientPageSize = 50;
+  int _grnPage = 0;
+  int _exceptionPage = 0;
 
   // Filters
   DateTime? _startDate;
@@ -405,6 +417,48 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
     return '$kind saved to Downloads folder. Check your File Manager.';
   }
 
+  /// Fed to the Excel writer, which reports every couple of thousand rows.
+  void _handleExportProgress(int written, int total) {
+    if (!mounted || total <= 0) return;
+    final next = '${((written / total) * 100).clamp(0, 100).round()}%';
+    if (next == _exportProgress) return;
+    setState(() => _exportProgress = next);
+  }
+
+  /// PDF renders every row as vector text, so a full register is both
+  /// enormous and slow enough to look hung. Ask before truncating — quietly
+  /// dropping rows from a report someone is about to file would be worse than
+  /// refusing. Returns null when the user cancels.
+  Future<List<T>?> _confirmPdfRowLimit<T>(List<T> data) async {
+    const limit = ReportExportService.pdfRowLimit;
+    if (data.length <= limit) return data;
+    final proceed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Too many rows for PDF'),
+        content: Text(
+          'This report has ${_kRowCountFormat.format(data.length)} rows. '
+          'PDF export is capped at ${_kRowCountFormat.format(limit)} rows so it '
+          'stays usable.\n\n'
+          'Export the first ${_kRowCountFormat.format(limit)} rows as PDF, or '
+          'cancel and use Excel for the complete data set.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Export first rows'),
+          ),
+        ],
+      ),
+    );
+    if (proceed != true) return null;
+    return data.take(limit).toList();
+  }
+
   void _exportExcel() async {
     if (_isExportingExcel || _isExportingPdf) return;
     setState(() => _isExportingExcel = true);
@@ -423,7 +477,8 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
         if (data.isEmpty) {
           throw Exception('No data available for the selected filters.');
         }
-        await _exportService.exportGateEntryRegisterToExcel(data);
+        await _exportService.exportGateEntryRegisterToExcel(data,
+            onProgress: _handleExportProgress);
       } else if (_selectedReport == 'GRN Reconciliation Report') {
         var data = await repo.getGrnReconReport(filter);
         data = data
@@ -444,7 +499,8 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
         if (data.isEmpty) {
           throw Exception('No data available for the selected filters.');
         }
-        await _exportService.exportGrnReconReportToExcel(data);
+        await _exportService.exportGrnReconReportToExcel(data,
+            onProgress: _handleExportProgress);
       } else if (_selectedReport == 'Exception Report') {
         var data = await repo.getExceptionReport(filter);
         data = data
@@ -462,7 +518,8 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
         if (data.isEmpty) {
           throw Exception('No data available for the selected filters.');
         }
-        await _exportService.exportExceptionReportToExcel(data);
+        await _exportService.exportExceptionReportToExcel(data,
+            onProgress: _handleExportProgress);
       } else if (_selectedReport == 'Vehicle TAT Report') {
         var data = await repo.getGateEntryRegister(
           filter,
@@ -473,7 +530,8 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
         if (data.isEmpty) {
           throw Exception('No data available for the selected filters.');
         }
-        await _exportService.exportVehicleTatReportToExcel(data);
+        await _exportService.exportVehicleTatReportToExcel(data,
+            onProgress: _handleExportProgress);
       }
 
       if (mounted) {
@@ -492,7 +550,12 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
         );
       }
     } finally {
-      if (mounted) setState(() => _isExportingExcel = false);
+      if (mounted) {
+        setState(() {
+          _isExportingExcel = false;
+          _exportProgress = null;
+        });
+      }
     }
   }
 
@@ -514,7 +577,10 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
         if (data.isEmpty) {
           throw Exception('No data available for the selected filters.');
         }
-        await _exportService.exportGateEntryRegisterToPdf(data);
+        final capped = await _confirmPdfRowLimit(data);
+        if (capped == null) return;
+        await _exportService.exportGateEntryRegisterToPdf(capped,
+            onProgress: _handleExportProgress);
       } else if (_selectedReport == 'GRN Reconciliation Report') {
         var data = await repo.getGrnReconReport(filter);
         data = data
@@ -535,7 +601,10 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
         if (data.isEmpty) {
           throw Exception('No data available for the selected filters.');
         }
-        await _exportService.exportGrnReconReportToPdf(data);
+        final capped = await _confirmPdfRowLimit(data);
+        if (capped == null) return;
+        await _exportService.exportGrnReconReportToPdf(capped,
+            onProgress: _handleExportProgress);
       } else if (_selectedReport == 'Exception Report') {
         var data = await repo.getExceptionReport(filter);
         data = data
@@ -553,7 +622,10 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
         if (data.isEmpty) {
           throw Exception('No data available for the selected filters.');
         }
-        await _exportService.exportExceptionReportToPdf(data);
+        final capped = await _confirmPdfRowLimit(data);
+        if (capped == null) return;
+        await _exportService.exportExceptionReportToPdf(capped,
+            onProgress: _handleExportProgress);
       } else if (_selectedReport == 'Vehicle TAT Report') {
         var data = await repo.getGateEntryRegister(
           filter,
@@ -564,7 +636,10 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
         if (data.isEmpty) {
           throw Exception('No data available for the selected filters.');
         }
-        await _exportService.exportVehicleTatReportToPdf(data);
+        final capped = await _confirmPdfRowLimit(data);
+        if (capped == null) return;
+        await _exportService.exportVehicleTatReportToPdf(capped,
+            onProgress: _handleExportProgress);
       }
 
       if (mounted) {
@@ -583,7 +658,12 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
         );
       }
     } finally {
-      if (mounted) setState(() => _isExportingPdf = false);
+      if (mounted) {
+        setState(() {
+          _isExportingPdf = false;
+          _exportProgress = null;
+        });
+      }
     }
   }
 
@@ -595,6 +675,20 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
       initialDateRange: _startDate != null && _endDate != null
           ? DateTimeRange(start: _startDate!, end: _endDate!)
           : null,
+      // showDateRangePicker is full-screen by design — Material specs it for
+      // phones. On a desktop window that means one small calendar marooned in
+      // a whole page of white. Box it into a dialog-sized surface when there
+      // is room; phones keep the native full-screen behaviour.
+      builder: (context, child) {
+        final width = MediaQuery.sizeOf(context).width;
+        if (width < 700 || child == null) return child ?? const SizedBox.shrink();
+        return Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 540, maxHeight: 620),
+            child: child,
+          ),
+        );
+      },
     );
     if (picked != null) {
       setState(() {
@@ -818,6 +912,8 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
                             // `_gateEntryLimit` field declarations.
                             _gateEntryPage = 1;
                             _gateEntryLimit = 20;
+                            _grnPage = 0;
+                            _exceptionPage = 0;
                           });
                         },
                       ),
@@ -873,7 +969,7 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
                                 const SizedBox(width: 4),
                                 Text(
                                   _isExportingExcel
-                                      ? 'Generating...'
+                                      ? (_exportProgress ?? 'Generating...')
                                       : (ultraCompact ? 'XLS' : 'Excel'),
                                   style: const TextStyle(fontSize: 12),
                                 ),
@@ -913,7 +1009,9 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
                               if (!tiny) ...[
                                 const SizedBox(width: 4),
                                 Text(
-                                  _isExportingPdf ? 'Generating...' : 'PDF',
+                                  _isExportingPdf
+                                      ? (_exportProgress ?? 'Generating...')
+                                      : 'PDF',
                                   style: const TextStyle(fontSize: 12),
                                 ),
                               ],
@@ -1517,6 +1615,42 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
         : _buildExceptionTable(context, data.exceptions);
   }
 
+  /// Compact pager for the client-windowed preview tables.
+  Widget _clientTablePager({
+    required int total,
+    required int page,
+    required ValueChanged<int> onPage,
+  }) {
+    if (total <= _clientPageSize) return const SizedBox.shrink();
+    final pageCount = ((total - 1) ~/ _clientPageSize) + 1;
+    final first = page * _clientPageSize + 1;
+    final last = (first + _clientPageSize - 1).clamp(first, total);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          Text(
+            'Showing $first-$last of $total',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          const SizedBox(width: 12),
+          IconButton(
+            tooltip: 'Previous',
+            icon: const Icon(Icons.chevron_left),
+            onPressed: page > 0 ? () => onPage(page - 1) : null,
+          ),
+          Text('${page + 1} / $pageCount'),
+          IconButton(
+            tooltip: 'Next',
+            icon: const Icon(Icons.chevron_right),
+            onPressed: page < pageCount - 1 ? () => onPage(page + 1) : null,
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildEmptyState(BuildContext context) {
     return Center(
       child: Text(
@@ -1833,8 +1967,21 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
   }
 
   Widget _buildGrnTable(BuildContext context, List<GrnReconReportItem> items) {
+    // DataTable builds every cell eagerly — it does not virtualise. The
+    // GRN report is 45 columns wide and the server returns up to 500 rows,
+    // which is ~22,500 DataCells in one synchronous build. That froze the
+    // web UI hard enough that Chrome could not even capture a frame.
+    // Render one page at a time instead.
+    final pageCount =
+        items.isEmpty ? 1 : ((items.length - 1) ~/ _clientPageSize) + 1;
+    final page = _grnPage.clamp(0, pageCount - 1);
+    final window =
+        items.skip(page * _clientPageSize).take(_clientPageSize).toList();
     return SingleChildScrollView(
-      child: SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SingleChildScrollView(
         scrollDirection: Axis.horizontal,
         child: DataTable(
           columns: const [
@@ -1884,7 +2031,7 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
             DataColumn(label: Text('Buyer Name')),
             DataColumn(label: Text('Maker Checker')),
           ],
-          rows: items
+          rows: window
               .map(
                 (e) => DataRow(cells: [
                   DataCell(Text(e.gateEntryNo ?? '')),
@@ -1939,6 +2086,9 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
               )
               .toList(),
         ),
+          ),
+          _clientTablePager(total: items.length, page: page, onPage: (p) => setState(() => _grnPage = p)),
+        ],
       ),
     );
   }
@@ -2147,8 +2297,21 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
 
   Widget _buildExceptionTable(
       BuildContext context, List<ExceptionReportItem> items) {
+    // DataTable builds every cell eagerly — it does not virtualise. The
+    // GRN report is 45 columns wide and the server returns up to 500 rows,
+    // which is ~22,500 DataCells in one synchronous build. That froze the
+    // web UI hard enough that Chrome could not even capture a frame.
+    // Render one page at a time instead.
+    final pageCount =
+        items.isEmpty ? 1 : ((items.length - 1) ~/ _clientPageSize) + 1;
+    final page = _exceptionPage.clamp(0, pageCount - 1);
+    final window =
+        items.skip(page * _clientPageSize).take(_clientPageSize).toList();
     return SingleChildScrollView(
-      child: SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SingleChildScrollView(
         scrollDirection: Axis.horizontal,
         child: DataTable(
           columns: const [
@@ -2162,7 +2325,7 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
             DataColumn(label: Text('Status')),
             DataColumn(label: Text('Date')),
           ],
-          rows: items
+          rows: window
               .map(
                 (e) => DataRow(cells: [
                   DataCell(Text(e.gateEntryNo.isEmpty ? '-' : e.gateEntryNo)),
@@ -2181,6 +2344,9 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
               )
               .toList(),
         ),
+          ),
+          _clientTablePager(total: items.length, page: page, onPage: (p) => setState(() => _exceptionPage = p)),
+        ],
       ),
     );
   }
