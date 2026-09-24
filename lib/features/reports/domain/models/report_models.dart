@@ -113,7 +113,13 @@ class GrnReconReportItem with _$GrnReconReportItem {
     return _$$GrnReconReportItemImplFromJson({
       ...json,
       'gate_entry_no': readText(['gate_entry_no', 'gateEntryNo', 'gateEntryId']),
-      'grn_no': readText(['grn_no', 'grnNo', 'matchedGrnNumber', 'materialDocument']),
+      // Orphan ("Pending Gate Entry") rows come from the server's
+      // fetchOrphanGrns, which puts the number in `grnNumber` and leaves
+      // `matchedGrnNumber` null. Without that key every orphan row showed a
+      // blank GRN No in the report and in the Excel/PDF export — the one
+      // field you need to chase the GRN up in SAP.
+      'grn_no': readText(
+          ['grn_no', 'grnNo', 'grnNumber', 'matchedGrnNumber', 'materialDocument']),
       'po_number': readText(['po_number', 'poNumber', 'purchaseOrder']),
       'challan_no': readText(['challan_no', 'challanNo', 'referenceNo', 'documentHeaderText']),
       'matched_status': readText(['matched_status', 'matchedStatus', 'statusLabel', 'status']),

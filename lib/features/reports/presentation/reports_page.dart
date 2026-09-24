@@ -480,7 +480,7 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
         await _exportService.exportGateEntryRegisterToExcel(data,
             onProgress: _handleExportProgress);
       } else if (_selectedReport == 'GRN Reconciliation Report') {
-        var data = await repo.getGrnReconReport(filter);
+        var data = await repo.getGrnReconReport(filter, fullDataSet: true);
         data = data
             .where((item) => _matchesSearchText(search, [
                   item.gateEntryNo,
@@ -502,7 +502,7 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
         await _exportService.exportGrnReconReportToExcel(data,
             onProgress: _handleExportProgress);
       } else if (_selectedReport == 'Exception Report') {
-        var data = await repo.getExceptionReport(filter);
+        var data = await repo.getExceptionReport(filter, fullDataSet: true);
         data = data
             .where((item) => _matchesSearchText(search, [
                   item.gateEntryNo,
@@ -582,7 +582,7 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
         await _exportService.exportGateEntryRegisterToPdf(capped,
             onProgress: _handleExportProgress);
       } else if (_selectedReport == 'GRN Reconciliation Report') {
-        var data = await repo.getGrnReconReport(filter);
+        var data = await repo.getGrnReconReport(filter, fullDataSet: true);
         data = data
             .where((item) => _matchesSearchText(search, [
                   item.gateEntryNo,
@@ -606,7 +606,7 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
         await _exportService.exportGrnReconReportToPdf(capped,
             onProgress: _handleExportProgress);
       } else if (_selectedReport == 'Exception Report') {
-        var data = await repo.getExceptionReport(filter);
+        var data = await repo.getExceptionReport(filter, fullDataSet: true);
         data = data
             .where((item) => _matchesSearchText(search, [
                   item.gateEntryNo,

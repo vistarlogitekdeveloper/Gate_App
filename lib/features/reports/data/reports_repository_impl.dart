@@ -25,6 +25,10 @@ class ReportsRepository {
 
   ReportsRepository({required ApiClient apiClient}) : _apiClient = apiClient;
 
+  /// Rows pulled for the on-screen preview. Exports ask for the full set
+  /// instead — see [getGrnReconReport] / [getExceptionReport].
+  static const int _previewLimit = 500;
+
   Map<String, dynamic> _buildQuery(
     ReportFilter filter, {
     bool includeLimit = true,
@@ -358,11 +362,22 @@ class ReportsRepository {
     );
   }
 
+  /// [fullDataSet] drops the preview cap so an export contains every row the
+  /// filters match. The server used to ignore `limit` entirely, so exports
+  /// happened to get everything; now that it honours the parameter, asking for
+  /// the preview limit here would silently truncate the spreadsheet to 500
+  /// rows — worse than the bug it replaced.
   Future<List<GrnReconReportItem>> getGrnReconReport(
-      ReportFilter filter) async {
+    ReportFilter filter, {
+    bool fullDataSet = false,
+  }) async {
     final response = await _apiClient.getRaw(
       '/reconciliations',
-      queryParameters: _buildQuery(filter),
+      queryParameters: _buildQuery(
+        filter,
+        includeLimit: !fullDataSet,
+        limit: fullDataSet ? null : _previewLimit,
+      ),
     );
 
     final success = response['success'] as bool? ?? false;
@@ -394,11 +409,18 @@ class ReportsRepository {
         .toList();
   }
 
+  /// See [getGrnReconReport] for why exports must opt out of the preview cap.
   Future<List<ExceptionReportItem>> getExceptionReport(
-      ReportFilter filter) async {
+    ReportFilter filter, {
+    bool fullDataSet = false,
+  }) async {
     final response = await _apiClient.getRaw(
       '/reconciliation/exceptions',
-      queryParameters: _buildQuery(filter),
+      queryParameters: _buildQuery(
+        filter,
+        includeLimit: !fullDataSet,
+        limit: fullDataSet ? null : _previewLimit,
+      ),
     );
 
     final success = response['success'] as bool? ?? false;

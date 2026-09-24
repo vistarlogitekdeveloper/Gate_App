@@ -69,8 +69,19 @@ class _ChallanFieldState {
         '(Entry: ${duplicateGateEntryNo?.trim().isNotEmpty == true ? duplicateGateEntryNo!.trim() : '-'})';
   }
 
+  /// A duplicate invoice is a hard stop, not a hint.
+  ///
+  /// This used to return null whenever a duplicate was found, so the red
+  /// warning under the field was purely decorative — the guard could still
+  /// save, and the server then let it through too. One invoice number may be
+  /// entered once per financial year, so it now blocks both the field
+  /// validator and _checkAllChallansBeforeSubmit.
+  ///
+  /// The text stays short because the row underneath already spells out the
+  /// financial year and links to the entry that owns the number.
   String? get blockingErrorText =>
-      localError ?? (hasDuplicateWarning ? null : serverError);
+      localError ??
+      (hasDuplicateWarning ? 'Duplicate invoice — not allowed' : serverError);
 
   void clearRemoteState() {
     isUnique = null;
