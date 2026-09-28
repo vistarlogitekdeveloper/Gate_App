@@ -200,28 +200,61 @@ class GateEntryFormController extends AsyncNotifier<void> {
       };
     }).toList();
 
+    // These keys MUST match updateBodySchema on the server. validate()
+    // replaces req.body with the Zod-parsed object, so any key the schema does
+    // not declare is deleted before the controller sees it. This map used to
+    // be snake_case, so challanNo / vendorCode / vendorName never arrived and
+    // the service fell back to the stored row — an admin could edit the
+    // invoice number, vendor code or vendor name and nothing changed.
     final payload = <String, dynamic>{
-      'challan_no': params['challan_no'],
-      'challan_nos': params['challan_nos'],
-      'vendor_name': params['vendor_name'],
-      'vendor_code': params['vendor_code'],
-      'lr_number': params['lr_number'],
-      'driver_contact_no': params['driver_contact_no'],
-      'vehicle_no': params['vehicle_no'],
-      'transporter_name': params['transporter_name'],
-      'gate_movement': params['gate_movement'],
+      'gateMovement': params['gate_movement'],
+      'vendorName': params['vendor_name'],
+      'vendorCode': params['vendor_code'],
+      'lrNumber': params['lr_number'],
+      'driverContactNo': params['driver_contact_no'],
+      'vehicleNo': params['vehicle_no'],
+      'transporterName': params['transporter_name'],
       'items': normalizedItems,
     };
 
-    // Only include the new fields if the form sent them. Omitting a field on
-    // PATCH preserves its existing server-side value.
-    final noOfLineItems = _parseOptionalInt(params['no_of_line_items']);
-    if (noOfLineItems != null) {
-      payload['noOfLineItems'] = noOfLineItems;
+    // challanNo is min(1) server-side — sending '' would fail validation
+    // outright, so only include it when there is one.
+    final challanNo = (params['challan_no'] ?? '').toString().trim();
+    if (challanNo.isNotEmpty) {
+      payload['challanNo'] = challanNo;
     }
+
+    // The invoice date lives on the first invoice row and was never sent on
+    // an edit at all, so changing it did nothing either. The server wants a
+    // plain YYYY-MM-DD date.
+    final entries = params['invoice_entries'] as List<dynamic>? ?? const [];
+    if (entries.isNotEmpty) {
+      final first = entries.first;
+      final documentDate = first is Map
+          ? (first['documentDate'] ?? '').toString().trim()
+          : '';
+      // Plain YYYY-MM-DD shape check. Anything else is skipped rather than
+      // sent, because the server validates this as a strict date and would
+      // reject the whole edit over a half-typed one.
+      final looksIsoDate = documentDate.length == 10 &&
+          documentDate[4] == '-' &&
+          documentDate[7] == '-' &&
+          int.tryParse(documentDate.replaceAll('-', '')) != null;
+      if (looksIsoDate) {
+        payload['documentDate'] = documentDate;
+      }
+    }
+
+    // noOfLineItems is deliberately NOT sent: no_of_line_items is neither
+    // written nor read anywhere in the gate backend, so the server discards
+    // it. Wire it up end to end (schema + service write + toPublic) before
+    // sending it again, or the field silently does nothing.
+    //
+    // Omitting a field on PATCH preserves its existing server-side value.
+    // The server field is 'remarks'; the singular 'remark' was discarded.
     final remark = _normalizeOptionalString(params['remark']);
     if (remark != null) {
-      payload['remark'] = remark;
+      payload['remarks'] = remark;
     }
 
     return payload;
