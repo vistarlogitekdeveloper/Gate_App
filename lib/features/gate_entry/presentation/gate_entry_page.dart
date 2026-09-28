@@ -8,6 +8,7 @@ import 'package:intl/intl.dart';
 import '../../../core/auth/session_controller.dart';
 import '../../../core/auth/session_state.dart';
 import '../../../core/auth/user_role.dart';
+import '../../../core/config/env.dart';
 import '../../../core/ui/responsive.dart';
 import '../../../core/ui/widgets/filter_bar.dart';
 import '../../../core/ui/widgets/logout_action.dart';
@@ -272,12 +273,12 @@ class _GateEntrySecurityViewState extends ConsumerState<_GateEntrySecurityView> 
     final state = ref.watch(gateEntryControllerProvider);
     final session = ref.watch(sessionControllerProvider);
     final role = session is Authenticated ? session.role : null;
-    // Admin is included so a backdated entry can actually be raised: the
-    // create route already authorises gate_security, warehouse_executive and
-    // admin server-side, but the button was gate-security only, which left
-    // admins with no way to reach the form at all.
-    final canCreate =
-        role == UserRole.gateSecurity || role == UserRole.admin;
+    // Admin is included ONLY while backdated entries are enabled: that is the
+    // single reason an admin needs to reach this form, and without it they
+    // would gain a create button they never had. The create route already
+    // authorises admin server-side; the button was simply never shown.
+    final canCreate = role == UserRole.gateSecurity ||
+        (Env.enableBackdatedGateEntry && role == UserRole.admin);
     final isMob = isMobile(context);
     final isTab = isTablet(context);
     final filtered = _applyFilters(state.entries);

@@ -19,5 +19,15 @@ class Env {
     }
   }
 
+  /// Admin-only backdated gate entries.
+  ///
+  /// OFF until the business asks for it. Flip to true and rebuild to show the
+  /// "Gate Entry Date & Time" control on the create form.
+  ///
+  /// The server has its own switch — GATE_ALLOW_BACKDATED_ENTRY — and BOTH
+  /// must be on. This one only hides the field; the server is what actually
+  /// refuses a backdated timestamp, so turning this on alone changes nothing.
+  static const bool enableBackdatedGateEntry = false;
+
   static bool get isDebug => current == Environment.dev;
 }

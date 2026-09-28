@@ -12,6 +12,7 @@ import 'controllers/gate_entry_form_controller.dart';
 import '../../../core/auth/session_controller.dart';
 import '../../../core/auth/session_state.dart';
 import '../../../core/auth/user_role.dart';
+import '../../../core/config/env.dart';
 import '../../../core/network/api_response.dart';
 import '../../../core/ui/responsive.dart';
 import '../../../core/ui/widgets/loading_overlay.dart';
@@ -612,6 +613,7 @@ class _GateEntryFormPageState extends ConsumerState<GateEntryFormPage> {
   /// does not accept a gate timestamp, so showing the control while editing
   /// would offer something that silently does nothing.
   bool get _canBackdate {
+    if (!Env.enableBackdatedGateEntry) return false;
     if (widget.initialEntry != null) return false;
     final session = ref.read(sessionControllerProvider);
     return session is Authenticated && session.role == UserRole.admin;
