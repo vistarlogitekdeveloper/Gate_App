@@ -9,6 +9,9 @@ import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
 
 import 'controllers/gate_entry_form_controller.dart';
+import '../../../core/auth/session_controller.dart';
+import '../../../core/auth/session_state.dart';
+import '../../../core/auth/user_role.dart';
 import '../../../core/network/api_response.dart';
 import '../../../core/ui/responsive.dart';
 import '../../../core/ui/widgets/loading_overlay.dart';
@@ -143,6 +146,10 @@ class _GateEntryFormPageState extends ConsumerState<GateEntryFormPage> {
   late final FocusNode _vendorNameFocusNode;
 
   // Challan uniqueness states
+  /// Admin-only override for when the vehicle actually arrived. Null means
+  /// "now", which is what every normal entry sends.
+  DateTime? _backdatedAt;
+
   bool _allowAlphaNumericChallan = false;
   bool _isScanning = false;
   Timer? _challanOnChangedDebounce;
@@ -601,6 +608,95 @@ class _GateEntryFormPageState extends ConsumerState<GateEntryFormPage> {
     }
   }
 
+  /// Backdating is admin-only, and only when creating. The update endpoint
+  /// does not accept a gate timestamp, so showing the control while editing
+  /// would offer something that silently does nothing.
+  bool get _canBackdate {
+    if (widget.initialEntry != null) return false;
+    final session = ref.read(sessionControllerProvider);
+    return session is Authenticated && session.role == UserRole.admin;
+  }
+
+  /// Start of the financial year currently open (1 April - 31 March), which
+  /// is as far back as the server will accept.
+  DateTime _financialYearStart(DateTime now) =>
+      DateTime(now.month >= 4 ? now.year : now.year - 1, 4, 1);
+
+  Future<void> _pickBackdatedAt() async {
+    final now = DateTime.now();
+    final firstDate = _financialYearStart(now);
+    final current = _backdatedAt ?? now;
+    final date = await showDatePicker(
+      context: context,
+      initialDate: current.isBefore(firstDate) ? firstDate : current,
+      firstDate: firstDate,
+      lastDate: now,
+    );
+    if (date == null || !mounted) return;
+    final time = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(current),
+    );
+    if (!mounted) return;
+    final picked = DateTime(date.year, date.month, date.day,
+        time?.hour ?? current.hour, time?.minute ?? current.minute);
+    // Picking today plus a later clock time is the one way to land in the
+    // future, which the server rejects outright.
+    if (picked.isAfter(DateTime.now())) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('A gate entry cannot be dated in the future.'),
+      ));
+      return;
+    }
+    setState(() => _backdatedAt = picked);
+  }
+
+  /// Mirrors the server rule in gateEntry.service.resolveGateTimestamp. The
+  /// server enforces it independently — this half is only convenience.
+  Widget _buildBackdateField() {
+    if (!_canBackdate) return const SizedBox.shrink();
+    final theme = Theme.of(context);
+    final at = _backdatedAt;
+    return Padding(
+      padding: const EdgeInsets.only(top: 16),
+      child: InputDecorator(
+        decoration: InputDecoration(
+          labelText: 'Gate Entry Date & Time',
+          prefixIcon: const Icon(Icons.history),
+          helperText: at == null
+              ? 'Admin only. Set this to record a vehicle that arrived earlier.'
+              : 'Backdated entry — this is what reports and TAT will use.',
+          helperMaxLines: 2,
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                at == null
+                    ? 'Now (current date & time)'
+                    : DateFormat('dd MMM yyyy  •  hh:mm a').format(at),
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  fontWeight: at == null ? FontWeight.normal : FontWeight.w600,
+                ),
+              ),
+            ),
+            TextButton.icon(
+              onPressed: _pickBackdatedAt,
+              icon: const Icon(Icons.edit_calendar, size: 18),
+              label: const Text('Change'),
+            ),
+            if (at != null)
+              IconButton(
+                tooltip: 'Use current date & time',
+                icon: const Icon(Icons.close, size: 18),
+                onPressed: () => setState(() => _backdatedAt = null),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _pickDocumentDate(_ChallanFieldState field) async {
     final now = DateTime.now();
     final parsed = DateTime.tryParse(field.documentDateController.text.trim());
@@ -698,6 +794,12 @@ class _GateEntryFormPageState extends ConsumerState<GateEntryFormPage> {
         'no_of_line_items': _noOfLineItemsCtrl.text.trim(),
         'remark': _remarkCtrl.text.trim(),
       };
+
+      // Omitted entirely unless an admin picked a date, so a normal entry is
+      // stamped "now" by the server exactly as before.
+      if (_backdatedAt != null) {
+        params['gate_timestamp'] = _backdatedAt!.toUtc().toIso8601String();
+      }
 
       if (isEdit) {
         final qty = int.tryParse(_quantityCtrl.text) ?? 0;
@@ -1225,6 +1327,7 @@ class _GateEntryFormPageState extends ConsumerState<GateEntryFormPage> {
                         onChanged: (val) =>
                             setState(() => _gateDirection = val!),
                       ),
+                      _buildBackdateField(),
                       const SizedBox(height: 16),
                       _buildChallanFields(),
 

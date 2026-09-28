@@ -106,6 +106,7 @@ class GateEntryFormController extends AsyncNotifier<void> {
           transporterName: params['transporter_name'],
           noOfLineItems: _parseOptionalInt(params['no_of_line_items']),
           remark: _normalizeOptionalString(params['remark']),
+          gateTimestamp: _normalizeOptionalString(params['gate_timestamp']),
         );
 
         final created = await ref

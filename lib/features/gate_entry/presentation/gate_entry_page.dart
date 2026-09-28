@@ -272,7 +272,12 @@ class _GateEntrySecurityViewState extends ConsumerState<_GateEntrySecurityView> 
     final state = ref.watch(gateEntryControllerProvider);
     final session = ref.watch(sessionControllerProvider);
     final role = session is Authenticated ? session.role : null;
-    final canCreate = role == UserRole.gateSecurity;
+    // Admin is included so a backdated entry can actually be raised: the
+    // create route already authorises gate_security, warehouse_executive and
+    // admin server-side, but the button was gate-security only, which left
+    // admins with no way to reach the form at all.
+    final canCreate =
+        role == UserRole.gateSecurity || role == UserRole.admin;
     final isMob = isMobile(context);
     final isTab = isTablet(context);
     final filtered = _applyFilters(state.entries);

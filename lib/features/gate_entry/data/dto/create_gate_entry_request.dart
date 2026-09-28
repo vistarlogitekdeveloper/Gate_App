@@ -57,6 +57,7 @@ class CreateGateEntryRequest {
     this.items = const <GateEntryItemResponse>[],
     this.noOfLineItems,
     this.remark,
+    this.gateTimestamp,
   });
 
   final String gateMovement;
@@ -74,6 +75,11 @@ class CreateGateEntryRequest {
   final List<GateEntryItemResponse> items;
   final int? noOfLineItems;
   final String? remark;
+
+  /// Admin-only override for when the vehicle actually arrived, as a UTC
+  /// ISO-8601 string. Null means "now", which is what every normal entry
+  /// sends. The server enforces the role and the allowed range.
+  final String? gateTimestamp;
 
   factory CreateGateEntryRequest.fromJson(Map<String, dynamic> json) {
     return CreateGateEntryRequest(
@@ -102,6 +108,8 @@ class CreateGateEntryRequest {
           .toList(),
       noOfLineItems: _readInt(json, const ['noOfLineItems', 'no_of_line_items']),
       remark: _readNullableString(json, const ['remark', 'remarks']),
+      gateTimestamp:
+          _readNullableString(json, const ['gateTimestamp', 'gate_timestamp']),
     );
   }
 
@@ -111,6 +119,13 @@ class CreateGateEntryRequest {
       'vendorCode': vendorCode,
       'vendorName': vendorName,
     };
+
+    // Omitted entirely unless an admin picked a date — the server treats a
+    // missing value as "now" and refuses the field for every other role.
+    final backdatedAt = gateTimestamp;
+    if (backdatedAt != null && backdatedAt.isNotEmpty) {
+      map['gateTimestamp'] = backdatedAt;
+    }
 
     // The server accepts two mutually exclusive create shapes and rejects any
     // request that mixes them: "Use either challan fields or invoiceEntries/
