@@ -27,7 +27,7 @@ class Env {
   /// The server has its own switch — GATE_ALLOW_BACKDATED_ENTRY — and BOTH
   /// must be on. This one only hides the field; the server is what actually
   /// refuses a backdated timestamp, so turning this on alone changes nothing.
-  static const bool enableBackdatedGateEntry = false;
+  static const bool enableBackdatedGateEntry = true;
 
   static bool get isDebug => current == Environment.dev;
 }

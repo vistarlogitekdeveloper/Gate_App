@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/grn_upload_state.dart';
+import '../../domain/services/grn_template_service.dart';
 import '../controllers/grn_upload_provider.dart';
 
 /// Material 3 card for importing GRN CSV/XLSX data.
@@ -16,6 +17,32 @@ class GrnImportCard extends ConsumerStatefulWidget {
 
 class _GrnImportCardState extends ConsumerState<GrnImportCard> {
   ProviderSubscription<GrnUploadState>? _uploadSubscription;
+  bool _isDownloadingTemplate = false;
+
+  Future<void> _downloadTemplate() async {
+    if (_isDownloadingTemplate) return;
+    setState(() => _isDownloadingTemplate = true);
+    try {
+      await downloadGrnTemplate();
+      if (!mounted) return;
+      _showSnackbar(
+        context,
+        'Template downloaded. Fill it in and upload it here.',
+        Theme.of(context).colorScheme.primaryContainer,
+        Theme.of(context).colorScheme.onPrimaryContainer,
+      );
+    } catch (error) {
+      if (!mounted) return;
+      _showSnackbar(
+        context,
+        'Could not create the template: $error',
+        Theme.of(context).colorScheme.errorContainer,
+        Theme.of(context).colorScheme.onErrorContainer,
+      );
+    } finally {
+      if (mounted) setState(() => _isDownloadingTemplate = false);
+    }
+  }
 
   @override
   void initState() {
@@ -136,6 +163,29 @@ class _GrnImportCardState extends ConsumerState<GrnImportCard> {
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 OutlinedButton.icon(
+                  onPressed:
+                      (isLoading || _isDownloadingTemplate) ? null : _downloadTemplate,
+                  icon: _isDownloadingTemplate
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.download_rounded, size: 18),
+                  label: Text(_isDownloadingTemplate
+                      ? 'Preparing...'
+                      : 'Download Template'),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 12,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                ),
+                OutlinedButton.icon(
                   onPressed: isLoading ? null : notifier.pickFile,
                   icon: const Icon(Icons.folder_open_rounded, size: 18),
                   label: const Text('Choose $allowedFileLabel File'),
@@ -209,6 +259,18 @@ class _GrnImportCardState extends ConsumerState<GrnImportCard> {
                   ),
                 ),
               ],
+            ),
+
+            const SizedBox(height: 10),
+            Text(
+              'Required columns: ${grnTemplateRequiredHeaders.join(', ')} '
+              '(quantity must be more than 0). Fill challanNo wherever you have '
+              'it — that is what matches a GRN to its gate entry; without it the '
+              'row shows as Pending Gate Entry. Dates can be a normal Excel date '
+              'cell or DD/MM/YYYY. Extra SAP columns are kept if present.',
+              style: textTheme.bodySmall?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+              ),
             ),
 
             // ── Progress ──────────────────────────────────────────────────────
