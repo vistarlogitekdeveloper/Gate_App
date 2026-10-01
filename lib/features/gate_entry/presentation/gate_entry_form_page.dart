@@ -803,15 +803,21 @@ class _GateEntryFormPageState extends ConsumerState<GateEntryFormPage> {
         params['gate_timestamp'] = _backdatedAt!.toUtc().toIso8601String();
       }
 
-      if (isEdit) {
-        final qty = int.tryParse(_quantityCtrl.text) ?? 0;
-        params['items'] = [
-          {
-            'material_code': _materialCode,
-            'po_number': _poCtrl.text.trim(),
-            'challan_qty': qty,
-          }
-        ];
+      if (isEdit && invoiceEntries.isNotEmpty) {
+        // Built from the invoice rows — the fields the user actually edits.
+        //
+        // This used to read a second, edit-only "Material Details" section
+        // whose Quantity and PO duplicated the invoice row above. Changing the
+        // quantity in the row did nothing, because the duplicate was what got
+        // submitted. That section is gone; the invoice row is the only source.
+        params['items'] = invoiceEntries
+            .map((entry) => <String, dynamic>{
+                  'material_code': entry['partNumber'],
+                  'po_number': entry['poNumber'],
+                  'challan_qty': entry['quantity'],
+                  'uom': entry['uom'],
+                })
+            .toList();
       }
 
       try {
@@ -1618,57 +1624,10 @@ class _GateEntryFormPageState extends ConsumerState<GateEntryFormPage> {
                       ),
 
                       // ── Section 3: Material Details ──────────────────────
-                      if (widget.initialEntry != null) ...[
-                        _buildSectionHeader(
-                            '3. Material Details', Icons.inventory_2_outlined),
-                        _buildDesktopOrMobileRow(
-                          TextFormField(
-                            controller: _materialCtrl,
-                            decoration: const InputDecoration(
-                              labelText: 'Material Name (Optional)',
-                              prefixIcon: Icon(Icons.category),
-                            ),
-                            onChanged: (value) => _materialCode = value.trim(),
-                            validator: (_) => null,
-                          ),
-                          TextFormField(
-                            controller: _poCtrl,
-                            decoration: const InputDecoration(
-                                labelText: 'PO Number (Optional)',
-                                prefixIcon: Icon(Icons.request_quote)),
-                            validator: (_) => null,
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        _buildDesktopOrMobileRow(
-                          TextFormField(
-                            controller: _quantityCtrl,
-                            decoration: const InputDecoration(
-                                labelText: 'Quantity (Optional)',
-                                prefixIcon:
-                                    Icon(Icons.production_quantity_limits),
-                                helperText: 'Enter exact numerical quantity.'),
-                            keyboardType: TextInputType.number,
-                            inputFormatters: [
-                              FilteringTextInputFormatter.digitsOnly
-                            ],
-                            validator: (value) {
-                              if (value == null || value.isEmpty) return null;
-                              if (int.tryParse(value) == null) {
-                                return 'Must be a valid integer';
-                              }
-                              return null;
-                            },
-                          ),
-                          const SizedBox.shrink(),
-                        ),
-                      ],
 
                       // ── Attachments ──────────────────────────────────────
                       _buildSectionHeader(
-                        widget.initialEntry != null
-                            ? '4. Attachments'
-                            : '3. Attachments',
+                        '3. Attachments',
                         Icons.attachment,
                       ),
                       Container(

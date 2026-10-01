@@ -215,7 +215,10 @@ class GateEntryFormController extends AsyncNotifier<void> {
       'driverContactNo': params['driver_contact_no'],
       'vehicleNo': params['vehicle_no'],
       'transporterName': params['transporter_name'],
-      'items': normalizedItems,
+      // items is min(1) server-side, so an empty list would fail validation
+      // outright. Omitting it leaves the stored items untouched, which is the
+      // correct PATCH behaviour anyway.
+      if (normalizedItems.isNotEmpty) 'items': normalizedItems,
     };
 
     // challanNo is min(1) server-side — sending '' would fail validation
