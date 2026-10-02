@@ -277,6 +277,42 @@ class GateEntryRepositoryImpl implements GateEntryRepository {
   }
 
   @override
+  Future<({bool exempt, String? reason})> getGrnExemptState(String id) async {
+    try {
+      final response = await _apiClient.getRaw('/gate-entries/$id');
+      final data = response['data'];
+      if (data is Map<String, dynamic>) {
+        final reason = data['grnExemptReason'];
+        return (
+          exempt: data['grnExempt'] == true,
+          reason: reason is String && reason.trim().isNotEmpty
+              ? reason.trim()
+              : null,
+        );
+      }
+    } catch (_) {
+      // Non-fatal — the screen falls back to showing the un-marked state
+      // rather than failing to render the gate entry.
+    }
+    return (exempt: false, reason: null);
+  }
+
+  @override
+  Future<ApiResponse<void>> setGrnExempt(
+    String id, {
+    required bool exempt,
+    String? reason,
+  }) async {
+    return _apiClient.post<void>(
+      '/gate-entries/$id/grn-exempt',
+      data: {
+        'exempt': exempt,
+        if (reason != null && reason.trim().isNotEmpty) 'reason': reason.trim(),
+      },
+    );
+  }
+
+  @override
   Future<ApiResponse<void>> approveGateEntry(String id) async {
     return _apiClient.post<void>('/gate-entries/$id/approve');
   }

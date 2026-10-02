@@ -176,6 +176,12 @@ class WarehouseReconciliationRecord {
   /// `orphan_<uuid>`.
   bool get isPendingGateEntry => normalizedStatus == 'pending_gate_entry';
 
+/// Gate entry a manager has flagged as never receiving a GRN
+  /// ("Not for Cytiva"). Deliberately neither pending nor an exception: it
+  /// needs no action, and counting it as pending is what made the report
+  /// overstate how many GRNs were outstanding.
+  bool get isNotForGrn => normalizedStatus == 'not_for_grn';
+
   /// Real exceptions that require operator attention.
   bool get isException =>
       !isMatched &&

@@ -17,6 +17,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../core/ui/responsive.dart';
 import '../../../core/ui/widgets/section_header.dart';
 import '../../../core/ui/widgets/skeleton_loader.dart';
+import '../data/gate_entry_repository_impl.dart';
 import '../../warehouse/data/warehouse_repository_impl.dart';
 import '../../warehouse/domain/models/warehouse_gate_entry.dart';
 import '../../warehouse/presentation/controllers/warehouse_providers.dart';
@@ -53,6 +54,123 @@ class _GateEntryDetailSecurityViewState extends ConsumerState<_GateEntryDetailSe
     return role == UserRole.warehouseManager ||
         role == UserRole.whMgr ||
         role == UserRole.admin;
+  }
+
+  // "Not for Cytiva" — the entry is outside the GRN process, so reconciliation
+  // stops counting it as a GRN that is still outstanding. Held here rather
+  // than on GateEntry: that model is freezed-generated and these two values
+  // are only needed on this screen.
+  bool _grnExempt = false;
+  String? _grnExemptReason;
+  bool _grnExemptBusy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadGrnExemptState();
+  }
+
+  Future<void> _loadGrnExemptState() async {
+    final state = await ref
+        .read(gateEntryRepositoryProvider)
+        .getGrnExemptState(widget.entryId);
+    if (!mounted) return;
+    setState(() {
+      _grnExempt = state.exempt;
+      _grnExemptReason = state.reason;
+    });
+  }
+
+  // Uses State.context rather than taking one as a parameter: the analyser
+  // only accepts a `mounted` guard across an await when the context belongs
+  // to this State.
+  Future<void> _toggleGrnExempt() async {
+    final marking = !_grnExempt;
+    if (marking) {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Mark as Not for Cytiva?'),
+          content: const Text(
+            'This entry will stop being counted as a pending GRN in the '
+            'reconciliation report, because no GRN is expected for it. '
+            'Your name and the time are recorded against the change.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Mark'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true || !mounted) return;
+    }
+
+    setState(() => _grnExemptBusy = true);
+    final response = await ref
+        .read(gateEntryRepositoryProvider)
+        .setGrnExempt(widget.entryId, exempt: marking);
+    if (!mounted) return;
+    setState(() => _grnExemptBusy = false);
+
+    if (!response.success) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        backgroundColor: Colors.red,
+        content: Text(response.message.isNotEmpty
+            ? response.message
+            : 'Could not update the GRN exemption.'),
+      ));
+      return;
+    }
+    await _loadGrnExemptState();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      backgroundColor: const Color(0xFF16A34A),
+      content: Text(marking
+          ? 'Marked as Not for Cytiva. It will no longer show as a pending GRN.'
+          : 'Exemption removed. This entry counts as a pending GRN again.'),
+    ));
+  }
+
+  Widget _buildGrnExemptAction(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          OutlinedButton.icon(
+            onPressed: _grnExemptBusy ? null : _toggleGrnExempt,
+            icon: _grnExemptBusy
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : Icon(_grnExempt ? Icons.undo : Icons.block, size: 18),
+            label: Text(_grnExempt
+                ? 'Remove "Not for Cytiva"'
+                : 'Mark as Not for Cytiva'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: _grnExempt ? null : Colors.blueGrey,
+            ),
+          ),
+          if (_grnExempt) ...[
+            const SizedBox(height: 6),
+            Text(
+              _grnExemptReason == null
+                  ? 'Excluded from pending GRN counts.'
+                  : 'Excluded from pending GRN counts — $_grnExemptReason',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
+        ],
+      ),
+    );
   }
 
   Future<void> _printGatePass(BuildContext context, GateEntry entry) async {
@@ -583,7 +701,12 @@ class _GateEntryDetailSecurityViewState extends ConsumerState<_GateEntryDetailSe
             role == UserRole.warehouseExecutive ||
             role.isAdminOrWarehouseManager);
 
-    if (!showVerify && !showApprove && !showClose && !showEdit && !showGateOut) {
+    if (!showVerify &&
+        !showApprove &&
+        !showClose &&
+        !showEdit &&
+        !showGateOut &&
+        !canEdit) {
       return const SizedBox.shrink();
     }
 
@@ -600,6 +723,9 @@ class _GateEntryDetailSecurityViewState extends ConsumerState<_GateEntryDetailSe
                 label: const Text('Edit Entry'),
               ),
             ),
+          // Manager/admin only — same roles as Edit. The server enforces it
+          // independently.
+          if (canEdit) _buildGrnExemptAction(context),
           if (showEdit && (showVerify || showApprove || showClose))
             const SizedBox(height: 10),
           Row(

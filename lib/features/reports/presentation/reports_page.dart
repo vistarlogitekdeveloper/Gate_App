@@ -1222,16 +1222,18 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
       int matched = 0;
       int exception = 0;
       int pending = 0;
+      int notForGrn = 0;
       double qtyDiffTotal = 0;
       for (final item in data.grnRecons) {
-        final key =
-            '${item.matchedStatus ?? ''} ${item.status ?? ''}'.toLowerCase();
-        if (key.contains('match')) {
-          matched++;
-        } else if (key.contains('exception') || key.contains('mismatch')) {
-          exception++;
-        } else {
-          pending++;
+        switch (_grnReconBucket(item)) {
+          case 'matched':
+            matched++;
+          case 'exception':
+            exception++;
+          case 'notForGrn':
+            notForGrn++;
+          default:
+            pending++;
         }
         qtyDiffTotal += (item.quantityDiff ?? 0).abs();
       }
@@ -1244,6 +1246,8 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
             Icons.warning_amber, Colors.redAccent),
         _summaryCard(
             context, 'Pending', pending.toString(), Icons.pending_actions, Colors.orange),
+        _summaryCard(context, 'Not for Cytiva', notForGrn.toString(),
+            Icons.block, Colors.blueGrey),
         _summaryCard(
           context,
           'Qty Diff Total',
@@ -1649,6 +1653,40 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
         ],
       ),
     );
+  }
+
+  /// Buckets a GRN reconciliation row for the summary tiles.
+  ///
+  /// Matches on the status KEY rather than a substring of the label. The old
+  /// check ran `key.contains('match')` before the exception branch, so
+  /// "quantity_mismatch" — which contains "match" — was counted as Matched,
+  /// overstating matches and understating exceptions.
+  String _grnReconBucket(GrnReconReportItem item) {
+    final status = (item.status ?? '').trim().toLowerCase();
+    if (status.isNotEmpty) {
+      if (status == 'matched') return 'matched';
+      if (status == 'not_for_grn') return 'notForGrn';
+      if (status == 'pending_grn' || status == 'pending_gate_entry') {
+        return 'pending';
+      }
+      if (status == 'quantity_mismatch' ||
+          status == 'duplicate_grn' ||
+          status == 'wrong_po_material' ||
+          status == 'grn_not_posted') {
+        return 'exception';
+      }
+    }
+    // Fallback for a server that only sent a human label.
+    final label = (item.matchedStatus ?? '').trim().toLowerCase();
+    if (label.startsWith('not for')) return 'notForGrn';
+    if (label.contains('mismatch') ||
+        label.contains('duplicate') ||
+        label.contains('wrong') ||
+        label.contains('not posted')) {
+      return 'exception';
+    }
+    if (label == 'matched') return 'matched';
+    return 'pending';
   }
 
   Widget _buildEmptyState(BuildContext context) {

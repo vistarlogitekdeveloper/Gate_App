@@ -18,6 +18,22 @@ abstract class GateEntryRepository {
   Future<ApiResponse<GateEntry>> updateGateEntry(
       String id, Map<String, dynamic> data);
   Future<ApiResponse<void>> verifyGateEntry(String id);
+
+  /// Current GRN-exemption state for one entry.
+  ///
+  /// Read straight from the API rather than carried on [GateEntry]: adding a
+  /// field to that model means regenerating freezed, and these two values are
+  /// only needed on the detail screen.
+  Future<({bool exempt, String? reason})> getGrnExemptState(String id);
+
+  /// Flags a gate entry as one that will never receive a SAP GRN
+  /// ("Not for Cytiva"), or clears that flag when [exempt] is false.
+  /// Manager/admin only — enforced server-side.
+  Future<ApiResponse<void>> setGrnExempt(
+    String id, {
+    required bool exempt,
+    String? reason,
+  });
   Future<ApiResponse<void>> approveGateEntry(String id);
   Future<ApiResponse<void>> closeGateEntry(String id);
   Future<ApiResponse<List<AttachmentInfo>>> getAttachments(String id);
