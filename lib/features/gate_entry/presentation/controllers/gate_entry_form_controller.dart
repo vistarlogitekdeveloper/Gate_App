@@ -114,7 +114,20 @@ class GateEntryFormController extends AsyncNotifier<void> {
             .createEntry(request);
 
         if (created == null) {
-          throw Exception('Failed to create gate entry');
+          // Surface what the server actually said. createEntry() stores the
+          // server message on the controller state and returns null, so
+          // throwing a fixed string here replaced every real reason —
+          // "Backdated gate entries are not enabled", "Duplicate challan
+          // detected", a validation failure — with "Failed to create gate
+          // entry", which told the user nothing and made these impossible to
+          // diagnose from a screenshot.
+          final serverMessage =
+              ref.read(gateEntryControllerProvider).error?.trim();
+          throw Exception(
+            (serverMessage != null && serverMessage.isNotEmpty)
+                ? serverMessage
+                : 'Failed to create gate entry',
+          );
         }
         createdEntry = created;
 
