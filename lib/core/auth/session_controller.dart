@@ -4,7 +4,9 @@ import 'session_cleanup.dart';
 import 'session_state.dart';
 import 'user_role.dart';
 import '../network/token_storage.dart';
+import '../telemetry/telemetry.dart';
 import '../../features/auth/domain/models/organization.dart';
+import '../../features/auth/domain/models/user.dart';
 import '../../features/auth/domain/usecases/login_usecase.dart';
 import '../../features/auth/domain/usecases/get_current_user_usecase.dart';
 import '../../features/auth/data/dto/login_request.dart';
@@ -50,6 +52,8 @@ class SessionController extends Notifier<SessionState> {
                 name: '',
                 isActive: true,
               );
+          // Before the state change, so the screen it leads to is already theirs.
+          _identify(response.data!, organization);
           state = Authenticated(
             user: response.data!,
             organization: organization,
@@ -88,6 +92,8 @@ class SessionController extends Notifier<SessionState> {
       final parsedRole = UserRole.fromApi(response.data!.role) ??
           UserRole.admin; // Fallback
 
+      // Before the state change, so the screen it leads to is already theirs.
+      _identify(response.data!.user, response.data!.organization);
       state = Authenticated(
         user: response.data!.user,
         organization: response.data!.organization,
@@ -126,6 +132,8 @@ class SessionController extends Notifier<SessionState> {
   Future<void> logout() async {
     if (_isClearingSession || state is Unauthenticated) return;
 
+    // Not awaited: sign-out never waits for analytics.
+    Telemetry.signedOut();
     _isClearingSession = true;
     try {
       // Flip auth state first so widgets/router stop issuing authed requests
@@ -137,6 +145,11 @@ class SessionController extends Notifier<SessionState> {
       _isClearingSession = false;
     }
   }
+
+  /// Usage analytics: who this is (id, role and organisation code only).
+  /// Fire and forget.
+  void _identify(User user, Organization organization) => Telemetry.signedIn(
+      userId: user.id, role: user.role, org: organization.code);
 
   bool get isAuthed => state is Authenticated;
 
@@ -151,6 +164,8 @@ class SessionController extends Notifier<SessionState> {
   Future<void> _clearSession() async {
     if (_isClearingSession) return;
 
+    // An expired session is a sign-out too (not awaited).
+    if (state is Authenticated) Telemetry.signedOut();
     _isClearingSession = true;
     try {
       state = const Unauthenticated();

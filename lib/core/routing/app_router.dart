@@ -15,10 +15,32 @@ import '../../features/vendor/presentation/vendor_master_page.dart';
 import '../auth/session_controller.dart';
 import '../auth/user_role.dart';
 import '../auth/session_state.dart';
+import '../telemetry/telemetry.dart';
 import '../ui/widgets/app_scaffold.dart';
 
+/// Reports each screen the router shows to usage analytics (by route
+/// pattern; see Telemetry.screen).
+GoRouter _withScreenViews(Ref ref, GoRouter router) {
+  if (!Telemetry.enabled) return router;
+  // The delegate, not the route-information provider: it also hears the
+  // location changes a redirect makes (sign-in landing on the dashboard).
+  void report() {
+    try {
+      Telemetry.screen(router.routerDelegate.currentConfiguration.uri.toString());
+    } catch (_) {
+      // No configuration yet; the next change reports.
+    }
+  }
+
+  router.routerDelegate.addListener(report);
+  ref.onDispose(() => router.routerDelegate.removeListener(report));
+  // The listener only hears changes: report the starting screen too.
+  WidgetsBinding.instance.addPostFrameCallback((_) => report());
+  return router;
+}
+
 final routerProvider = Provider<GoRouter>((ref) {
-  return GoRouter(
+  return _withScreenViews(ref, GoRouter(
     initialLocation: '/login',
     refreshListenable: _RouterRefresh(ref),
     redirect: (context, state) {
@@ -105,7 +127,7 @@ final routerProvider = Provider<GoRouter>((ref) {
         ],
       ),
     ],
-  );
+  ));
 });
 
 int _indexFromLocation(String location) {
