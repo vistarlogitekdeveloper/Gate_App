@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../config/env.dart';
 import '../auth/session_controller.dart';
 import '../auth/session_state.dart';
+import '../telemetry/telemetry.dart';
 import 'token_storage.dart';
 import 'api_client.dart';
 
@@ -75,6 +76,10 @@ final dioProvider = Provider<Dio>((ref) {
       return handler.next(e);
     },
   ));
+
+  // Usage analytics: named actions and failed calls. Changes nothing about
+  // the request or its handling (lib/core/telemetry/telemetry.dart).
+  dio.interceptors.add(TelemetryInterceptor());
 
   return dio;
 });
