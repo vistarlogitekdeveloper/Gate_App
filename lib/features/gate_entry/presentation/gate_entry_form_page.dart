@@ -58,8 +58,12 @@ class _ChallanFieldState {
   String? localError;
   String? serverError;
   String? lastCheckedValue;
+  // The vendor code the last server check was made for. The duplicate rule is
+  // per vendor, so a result is only reusable for the same invoice AND vendor.
+  String? lastCheckedVendor;
   String? duplicateGateEntryId;
   String? duplicateGateEntryNo;
+  String? duplicateVendorCode;
 
   bool get hasDuplicateEntryLink =>
       (duplicateGateEntryId ?? '').trim().isNotEmpty;
@@ -69,7 +73,9 @@ class _ChallanFieldState {
 
   String? get duplicateWarningText {
     if (!hasDuplicateWarning) return null;
-    return 'Invoice already exists in this financial year '
+    final vendor = duplicateVendorCode?.trim() ?? '';
+    return 'Invoice already exists '
+        '${vendor.isNotEmpty ? 'for vendor $vendor ' : ''}in this financial year '
         '(Entry: ${duplicateGateEntryNo?.trim().isNotEmpty == true ? duplicateGateEntryNo!.trim() : '-'})';
   }
 
@@ -78,8 +84,9 @@ class _ChallanFieldState {
   /// This used to return null whenever a duplicate was found, so the red
   /// warning under the field was purely decorative — the guard could still
   /// save, and the server then let it through too. One invoice number may be
-  /// entered once per financial year, so it now blocks both the field
-  /// validator and _checkAllChallansBeforeSubmit.
+  /// entered once per vendor per financial year (a different vendor may reuse
+  /// it), so it now blocks both the field validator and
+  /// _checkAllChallansBeforeSubmit.
   ///
   /// The text stays short because the row underneath already spells out the
   /// financial year and links to the entry that owns the number.
@@ -91,8 +98,10 @@ class _ChallanFieldState {
     isUnique = null;
     serverError = null;
     lastCheckedValue = null;
+    lastCheckedVendor = null;
     duplicateGateEntryId = null;
     duplicateGateEntryNo = null;
+    duplicateVendorCode = null;
   }
 
   void dispose() {
@@ -402,7 +411,12 @@ class _GateEntryFormPageState extends ConsumerState<GateEntryFormPage> {
       return;
     }
 
-    if (field.isChecking || field.lastCheckedValue == challanNo) {
+    // The duplicate rule is per vendor, so a result for this invoice under a
+    // different vendor code says nothing about this one: check again.
+    final vendorCode = _vendorCodeCtrl.text.trim();
+    if (field.isChecking ||
+        (field.lastCheckedValue == challanNo &&
+            field.lastCheckedVendor == vendorCode)) {
       return;
     }
 
@@ -419,12 +433,9 @@ class _GateEntryFormPageState extends ConsumerState<GateEntryFormPage> {
 
     try {
       final repo = ref.read(gateEntryRepositoryProvider);
-      final vendorCode = _vendorCodeCtrl.text.trim();
-      // Enforce cross-vendor duplicate detection for the invoice number by
-      // scoping to the current financial year (April-March). Vendor code is
-      // still passed so the backend can annotate the collision with the
-      // right vendor, but the FY scope is what makes this an FY-wide check
-      // rather than a per-vendor one.
+      // One invoice number per vendor per financial year (April-March): the
+      // backend refuses it only for the same vendor, or when either side has
+      // no vendor code. So the vendor code must be sent with every check.
       final result = await repo.checkChallanUniqueness(
         challanNo,
         vendorCode: vendorCode.isNotEmpty ? vendorCode : null,
@@ -432,9 +443,25 @@ class _GateEntryFormPageState extends ConsumerState<GateEntryFormPage> {
       );
       if (!mounted) return;
 
+      // The vendor (or the invoice) changed while this check was in flight —
+      // the re-check that change asked for was skipped as "already checking",
+      // so this result is stale. Drop it and check the current values.
+      if (_vendorCodeCtrl.text.trim() != vendorCode ||
+          field.controller.text.trim() != challanNo) {
+        field.isChecking = false;
+        field.lastCheckedValue = null;
+        // Awaited, so _checkAllChallansBeforeSubmit sees the fresh answer.
+        if (index < _challanFields.length && identical(_challanFields[index], field)) {
+          await _checkSingleChallan(index);
+        }
+        return;
+      }
+
       setState(() {
         field.isChecking = false;
         field.lastCheckedValue = challanNo;
+        field.lastCheckedVendor = vendorCode;
+        field.duplicateVendorCode = result.data?.data?.existingVendorCode;
         if (result.success && result.data != null) {
           final unique = result.data!.data?.isUnique ?? false;
           final duplicateGateEntryId = result.data!.data?.existingGateEntryId;
@@ -450,11 +477,12 @@ class _GateEntryFormPageState extends ConsumerState<GateEntryFormPage> {
             field.duplicateGateEntryId = null;
             field.duplicateGateEntryNo = null;
           } else {
-            field.serverError =
-                'Invoice already exists in this financial year '
-                '(Entry: ${result.data!.data?.existingGateEntryNo ?? '-'})';
+            // The ids first: duplicateWarningText is built from them.
             field.duplicateGateEntryId = duplicateGateEntryId;
             field.duplicateGateEntryNo = duplicateGateEntryNo;
+            field.serverError = field.duplicateWarningText ??
+                'Invoice already exists in this financial year '
+                    '(Entry: ${result.data!.data?.existingGateEntryNo ?? '-'})';
           }
         } else {
           final duplicateGateEntryId = result.data?.data?.existingGateEntryId;
@@ -484,6 +512,7 @@ class _GateEntryFormPageState extends ConsumerState<GateEntryFormPage> {
         field.isChecking = false;
         field.isUnique = false;
         field.lastCheckedValue = challanNo;
+        field.lastCheckedVendor = vendorCode;
         field.serverError = 'Error checking challan uniqueness';
         field.duplicateGateEntryId = null;
         field.duplicateGateEntryNo = null;
