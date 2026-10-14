@@ -8,6 +8,7 @@ import '../../features/auth/presentation/login_page.dart';
 import '../../features/dashboard/presentation/dashboard_page.dart';
 import '../../features/dashboard/presentation/controllers/dashboard_controller.dart';
 import '../../features/warehouse/presentation/controllers/warehouse_providers.dart';
+import '../../features/gate_entry/presentation/deleted_gate_entries_page.dart';
 import '../../features/gate_entry/presentation/gate_entry_page.dart';
 import '../../features/reconciliation/presentation/reco_page.dart';
 import '../../features/reports/presentation/reports_page.dart';
@@ -67,6 +68,11 @@ final routerProvider = Provider<GoRouter>((ref) {
           !role.isAdminOrWarehouseManager) {
         return '/app/dashboard';
       }
+      // Deleted gate entries are admin only (the API refuses everyone else).
+      if (state.matchedLocation == '/app/deleted-gate-entries' &&
+          role != UserRole.admin) {
+        return '/app/dashboard';
+      }
 
       return null;
     },
@@ -98,6 +104,9 @@ final routerProvider = Provider<GoRouter>((ref) {
                 case 4:
                   context.go('/app/vendor-master');
                   break;
+                case 5:
+                  context.go('/app/deleted-gate-entries');
+                  break;
               }
             },
             child: child,
@@ -124,6 +133,10 @@ final routerProvider = Provider<GoRouter>((ref) {
             path: '/app/vendor-master',
             builder: (context, state) => const VendorMasterPage(),
           ),
+          GoRoute(
+            path: '/app/deleted-gate-entries',
+            builder: (context, state) => const DeletedGateEntriesPage(),
+          ),
         ],
       ),
     ],
@@ -135,6 +148,7 @@ int _indexFromLocation(String location) {
   if (location.startsWith('/app/reconciliation')) return 2;
   if (location.startsWith('/app/reports')) return 3;
   if (location.startsWith('/app/vendor-master')) return 4;
+  if (location.startsWith('/app/deleted-gate-entries')) return 5;
   return 0;
 }
 

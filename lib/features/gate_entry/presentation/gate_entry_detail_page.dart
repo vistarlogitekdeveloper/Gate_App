@@ -12,6 +12,7 @@ import '../domain/services/gate_pass_pdf_service.dart';
 import 'controllers/gate_entry_detail_controller.dart';
 import 'controllers/gate_entry_controller.dart';
 import 'gate_entry_form_page.dart';
+import 'widgets/delete_gate_entry_dialog.dart';
 
 import 'package:url_launcher/url_launcher.dart';
 import '../../../core/ui/responsive.dart';
@@ -173,6 +174,46 @@ class _GateEntryDetailSecurityViewState extends ConsumerState<_GateEntryDetailSe
     );
   }
 
+  // Admin only (enforced server-side too). A reason is required; the server
+  // keeps a copy of the entry under Deleted Entries.
+  Future<void> _deleteEntry(GateEntry entry) async {
+    final reason = await showDeleteGateEntryDialog(
+      context,
+      gateEntryNo: entry.gateEntryNo ?? 'this gate entry',
+    );
+    if (reason == null || !mounted) return;
+
+    final response = await runWithProgressDialog(
+      context,
+      () => ref
+          .read(gateEntryRepositoryProvider)
+          .deleteGateEntry(entry.id, reason: reason),
+      label: 'Deleting gate entry...',
+    );
+    if (!mounted) return;
+
+    if (!response.success) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: Colors.redAccent,
+        content: Text(response.message.isNotEmpty
+            ? response.message
+            : 'Could not delete the gate entry.'),
+      ));
+      return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      behavior: SnackBarBehavior.floating,
+      backgroundColor: Colors.green,
+      content: Text('Gate entry ${entry.gateEntryNo ?? ''} deleted. '
+          'It is listed under Deleted Entries.'),
+    ));
+    // The list behind this screen still shows the entry until refreshed.
+    ref.read(gateEntryControllerProvider.notifier).fetchEntries();
+    Navigator.of(context).pop();
+  }
+
   Future<void> _printGatePass(BuildContext context, GateEntry entry) async {
     try {
       await gatePassPdfService.printGatePass(entry);
@@ -279,6 +320,13 @@ class _GateEntryDetailSecurityViewState extends ConsumerState<_GateEntryDetailSe
               icon: const Icon(Icons.edit_outlined),
               tooltip: 'Edit Gate Entry',
               onPressed: () => _openEditPage(context, state.entry!),
+            ),
+          if (state.entry != null && role == UserRole.admin)
+            IconButton(
+              icon: const Icon(Icons.delete_outline),
+              tooltip: 'Delete Gate Entry',
+              color: Theme.of(context).colorScheme.error,
+              onPressed: () => _deleteEntry(state.entry!),
             ),
           const LogoutAction(),
           const SizedBox(width: 8),
@@ -694,6 +742,7 @@ class _GateEntryDetailSecurityViewState extends ConsumerState<_GateEntryDetailSe
     final showApprove = status == 'verification_pending' && canApprove;
     final showClose = status == 'approved' && canClose;
     final showEdit = canEdit;
+    final showDelete = role == UserRole.admin;
     final showGateOut = entry.gateOutTimestamp == null &&
         entry.gateMovement == GateMovement.inMovement &&
         status != 'closed' &&
@@ -706,6 +755,7 @@ class _GateEntryDetailSecurityViewState extends ConsumerState<_GateEntryDetailSe
         !showClose &&
         !showEdit &&
         !showGateOut &&
+        !showDelete &&
         !canEdit) {
       return const SizedBox.shrink();
     }
@@ -798,6 +848,26 @@ class _GateEntryDetailSecurityViewState extends ConsumerState<_GateEntryDetailSe
                 label: const Text('Gate Out'),
                 style: FilledButton.styleFrom(
                   backgroundColor: Colors.deepOrange,
+                ),
+              ),
+            ),
+          ],
+          if (showDelete) ...[
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () => _deleteEntry(entry),
+                icon: const Icon(Icons.delete_outline, size: 18),
+                label: const Text('Delete Entry'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Theme.of(context).colorScheme.error,
+                  side: BorderSide(
+                    color: Theme.of(context)
+                        .colorScheme
+                        .error
+                        .withValues(alpha: 0.6),
+                  ),
                 ),
               ),
             ),

@@ -32,12 +32,14 @@ class AppScaffold extends ConsumerWidget {
     final showReconciliation = role != UserRole.gateSecurity;
     final showReports = role != UserRole.gateSecurity;
     final showVendorMaster = role.isAdminOrWarehouseManager;
+    final showDeletedEntries = role == UserRole.admin;
     final visibleIndexes = <int>[
       0,
       1,
       if (showReconciliation) 2,
       if (showReports) 3,
       if (showVendorMaster) 4,
+      if (showDeletedEntries) 5,
     ];
     final navigationIndex =
         visibleIndexes.indexOf(selectedIndex).clamp(0, visibleIndexes.length - 1);
@@ -57,6 +59,7 @@ class AppScaffold extends ConsumerWidget {
                   showReconciliation: showReconciliation,
                   showReports: showReports,
                   showVendorMaster: showVendorMaster,
+                  showDeletedEntries: showDeletedEntries,
                   authed: session is Authenticated ? session : null,
                 ),
                 // Wrap the routed child in a fresh transparent Material so
@@ -87,6 +90,7 @@ class AppScaffold extends ConsumerWidget {
         showReconciliation: showReconciliation,
         showReports: showReports,
         showVendorMaster: showVendorMaster,
+        showDeletedEntries: showDeletedEntries,
         onSelected: (i) => onSelect(visibleIndexes[i]),
       ),
     );
@@ -98,6 +102,7 @@ class _MobileNavBar extends StatelessWidget {
   final bool showReconciliation;
   final bool showReports;
   final bool showVendorMaster;
+  final bool showDeletedEntries;
   final ValueChanged<int> onSelected;
 
   const _MobileNavBar({
@@ -105,6 +110,7 @@ class _MobileNavBar extends StatelessWidget {
     required this.showReconciliation,
     required this.showReports,
     required this.showVendorMaster,
+    required this.showDeletedEntries,
     required this.onSelected,
   });
 
@@ -163,6 +169,12 @@ class _MobileNavBar extends StatelessWidget {
                 selectedIcon: Icon(Icons.store_rounded),
                 label: 'Vendors',
               ),
+            if (showDeletedEntries)
+              const NavigationDestination(
+                icon: Icon(Icons.delete_sweep_outlined),
+                selectedIcon: Icon(Icons.delete_sweep_rounded),
+                label: 'Deleted',
+              ),
           ],
         ),
       ),
@@ -176,6 +188,7 @@ class _DesktopSidebar extends StatelessWidget {
   final bool showReconciliation;
   final bool showReports;
   final bool showVendorMaster;
+  final bool showDeletedEntries;
   final Authenticated? authed;
 
   const _DesktopSidebar({
@@ -184,6 +197,7 @@ class _DesktopSidebar extends StatelessWidget {
     required this.showReconciliation,
     required this.showReports,
     required this.showVendorMaster,
+    required this.showDeletedEntries,
     required this.authed,
   });
 
@@ -308,6 +322,19 @@ class _DesktopSidebar extends StatelessWidget {
                     label: 'Vendor Master',
                     isSelected: selectedIndex == 4,
                     onTap: () => onSelect(4),
+                  ),
+                ],
+                if (showDeletedEntries) ...[
+                  if (!showVendorMaster) ...[
+                    const SizedBox(height: 22),
+                    const _SectionLabel(label: 'ADMIN'),
+                  ],
+                  _SidebarItem(
+                    icon: Icons.delete_sweep_outlined,
+                    activeIcon: Icons.delete_sweep_rounded,
+                    label: 'Deleted Entries',
+                    isSelected: selectedIndex == 5,
+                    onTap: () => onSelect(5),
                   ),
                 ],
               ],
