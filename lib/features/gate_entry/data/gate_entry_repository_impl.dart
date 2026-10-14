@@ -7,6 +7,7 @@ import '../../../../core/network/dio_provider.dart';
 import '../../../../core/network/pagination_model.dart';
 import '../domain/gate_entry_repository.dart';
 import '../domain/models/attachment.dart';
+import '../domain/models/deleted_gate_entry.dart';
 import '../domain/models/gate_entry.dart';
 import '../domain/models/gate_entry_item.dart';
 import '../domain/models/gate_entry_list_response.dart';
@@ -310,6 +311,71 @@ class GateEntryRepositoryImpl implements GateEntryRepository {
         if (reason != null && reason.trim().isNotEmpty) 'reason': reason.trim(),
       },
     );
+  }
+
+  @override
+  Future<ApiResponse<void>> deleteGateEntry(String id,
+      {required String reason}) async {
+    try {
+      final response = await _apiClient.deleteRaw(
+        '/gate-entries/$id',
+        data: {'reason': reason.trim()},
+      );
+      return ApiResponse<void>(
+        success: response['success'] == true,
+        message: response['message']?.toString() ?? '',
+      );
+    } catch (e) {
+      return ApiResponse<void>(
+        success: false,
+        message: e.toString().replaceFirst('Exception: ', ''),
+      );
+    }
+  }
+
+  @override
+  Future<ApiResponse<DeletedGateEntryPage>> getDeletedGateEntries({
+    String? search,
+    int page = 1,
+    int limit = 25,
+  }) async {
+    try {
+      final response = await _apiClient.getRaw(
+        '/gate-entries/deleted',
+        queryParameters: {
+          if (search != null && search.trim().isNotEmpty) 'q': search.trim(),
+          'page': '$page',
+          'limit': '$limit',
+        },
+      );
+      final data = response['data'];
+      final pagination = response['pagination'];
+      final entries = data is List
+          ? data
+              .whereType<Map<String, dynamic>>()
+              .map(DeletedGateEntry.fromJson)
+              .toList()
+          : <DeletedGateEntry>[];
+      int intOf(String key, int fallback) =>
+          pagination is Map && pagination[key] is num
+              ? (pagination[key] as num).toInt()
+              : fallback;
+      return ApiResponse(
+        success: true,
+        message: response['message']?.toString() ?? '',
+        data: DeletedGateEntryPage(
+          entries: entries,
+          page: intOf('page', page),
+          totalPages: intOf('totalPages', entries.isEmpty ? 0 : 1),
+          total: intOf('total', entries.length),
+        ),
+      );
+    } catch (e) {
+      return ApiResponse(
+        success: false,
+        message: e.toString().replaceFirst('Exception: ', ''),
+      );
+    }
   }
 
   @override

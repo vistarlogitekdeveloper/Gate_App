@@ -2,6 +2,7 @@ import '../../../core/network/api_response.dart';
 import '../data/dto/create_gate_entry_request.dart';
 import '../data/dto/check_challan_uniqueness_response.dart';
 import 'models/attachment.dart';
+import 'models/deleted_gate_entry.dart';
 import 'models/gate_entry.dart';
 import 'models/gate_entry_list_response.dart';
 import 'models/gate_entry_query.dart';
@@ -33,6 +34,17 @@ abstract class GateEntryRepository {
     String id, {
     required bool exempt,
     String? reason,
+  });
+  /// Deletes a gate entry. Admin only, and [reason] (at least 5 characters)
+  /// is required — both enforced server-side. The server keeps a full record
+  /// of the entry, readable through [getDeletedGateEntries].
+  Future<ApiResponse<void>> deleteGateEntry(String id, {required String reason});
+
+  /// Gate entries an admin deleted, newest deletion first. Admin only.
+  Future<ApiResponse<DeletedGateEntryPage>> getDeletedGateEntries({
+    String? search,
+    int page = 1,
+    int limit = 25,
   });
   Future<ApiResponse<void>> approveGateEntry(String id);
   Future<ApiResponse<void>> closeGateEntry(String id);
