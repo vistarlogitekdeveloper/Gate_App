@@ -7,6 +7,7 @@ import 'package:vistar_event_tracker/vistar_event_tracker.dart'
     show EventType, TrackerConfig, VistarEventTracker, VistarEvents;
 
 import '../config/env.dart';
+import '../network/retry_interceptor.dart' show RetryInterceptor;
 
 /// Usage analytics for the Gate app, sent to the in-house event tracker and
 /// read in the Platform Console under Analytics > Event tracker.
@@ -242,7 +243,13 @@ class TelemetryInterceptor extends Interceptor {
         final status = err.response?.statusCode;
         // A 4xx is a decision the server made, and a cancel is the app's own
         // (a screen left, or a request refused while signed out).
-        if ((status == null || status >= 500) && err.type != DioExceptionType.cancel) {
+        // An in-between attempt of RetryInterceptor: only the request's final
+        // outcome is reported, so one dropped read is not counted 3 times.
+        final retryAttempt =
+            err.requestOptions.extra[RetryInterceptor.skipTelemetryKey] == true;
+        if ((status == null || status >= 500) &&
+            err.type != DioExceptionType.cancel &&
+            !retryAttempt) {
           Telemetry.error('api_error', {
             'endpoint': Telemetry.routePattern(err.requestOptions.path),
             'method': err.requestOptions.method,
