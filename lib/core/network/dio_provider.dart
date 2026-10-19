@@ -7,6 +7,7 @@ import '../auth/session_state.dart';
 import '../telemetry/telemetry.dart';
 import 'token_storage.dart';
 import 'api_client.dart';
+import 'retry_interceptor.dart';
 
 final apiClientProvider = Provider<ApiClient>((ref) {
   return ApiClient(ref.read(dioProvider));
@@ -76,6 +77,11 @@ final dioProvider = Provider<Dio>((ref) {
       return handler.next(e);
     },
   ));
+
+  // A GET that hit a dropped connection / timeout / proxy 502-504 is tried
+  // again (twice, after ~1s and ~3s) before the screen or telemetry sees it.
+  // Must stay BEFORE the telemetry interceptor (core/network/retry_interceptor.dart).
+  dio.interceptors.add(RetryInterceptor(dio));
 
   // Usage analytics: named actions and failed calls. Changes nothing about
   // the request or its handling (lib/core/telemetry/telemetry.dart).
