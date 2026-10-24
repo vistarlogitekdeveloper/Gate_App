@@ -20,6 +20,7 @@ import '../../../core/ui/widgets/logout_action.dart';
 import '../data/gate_entry_repository_impl.dart';
 import '../domain/models/gate_entry.dart';
 import '../domain/models/vendor.dart';
+import '../../vendor/domain/models/vendor_po_material.dart';
 import '../domain/services/e_invoice_qr_parser.dart';
 import '../domain/services/gate_pass_pdf_service.dart';
 import 'gate_entry_detail_page.dart';
@@ -27,6 +28,7 @@ import '../domain/models/scanned_document.dart';
 import '../domain/services/on_device_ocr.dart';
 import 'widgets/e_invoice_qr_scanner_page.dart';
 import 'widgets/scan_review_sheet.dart';
+import 'widgets/search_picker_dialog.dart';
 
 class _ChallanFieldState {
   _ChallanFieldState({
@@ -43,7 +45,8 @@ class _ChallanFieldState {
         partNumberController = TextEditingController(text: initialPartNumber),
         quantityController = TextEditingController(text: initialQuantity),
         uomController = TextEditingController(text: initialUom),
-        focusNode = FocusNode();
+        focusNode = FocusNode(),
+        poFocusNode = FocusNode();
 
   final TextEditingController controller;
   final TextEditingController documentDateController;
@@ -52,6 +55,9 @@ class _ChallanFieldState {
   final TextEditingController quantityController;
   final TextEditingController uomController;
   final FocusNode focusNode;
+  // Losing focus with a PO typed and no vendor yet looks the PO up in the
+  // vendor master and fills in its vendor and material.
+  final FocusNode poFocusNode;
 
   bool isChecking = false;
   bool? isUnique;
@@ -112,6 +118,7 @@ class _ChallanFieldState {
     quantityController.dispose();
     uomController.dispose();
     focusNode.dispose();
+    poFocusNode.dispose();
   }
 }
 
@@ -154,6 +161,19 @@ class _GateEntryFormPageState extends ConsumerState<GateEntryFormPage> {
   Timer? _vendorSuggestionDebounce;
   late final FocusNode _vendorCodeFocusNode;
   late final FocusNode _vendorNameFocusNode;
+  Timer? _vendorCodeDebounce;
+
+  // The selected vendor's purchase orders and the material on each, from the
+  // vendor master (migration 225). The PO and part fields offer only these;
+  // choosing a PO fills its material, and a PO chosen before the vendor fills
+  // the vendor too. Empty when the vendor has none in the master.
+  List<VendorPoMaterial> _vendorPos = const [];
+  // Normalised code (_codeKey) the list above belongs to; null = not loaded.
+  String? _vendorPosFor;
+  bool _loadingVendorPos = false;
+  // Bumped on every load and reset, so a slow answer for a vendor that is no
+  // longer selected is dropped.
+  int _vendorPosSeq = 0;
 
   // Challan uniqueness states
   /// Admin-only override for when the vehicle actually arrived. Null means
@@ -178,7 +198,21 @@ class _GateEntryFormPageState extends ConsumerState<GateEntryFormPage> {
   @override
   void initState() {
     super.initState();
-    _vendorCodeFocusNode = FocusNode();
+    _vendorCodeFocusNode = FocusNode()
+      ..addListener(() {
+        if (_vendorCodeFocusNode.hasFocus) return;
+        Future.delayed(const Duration(milliseconds: 150), () {
+          if (mounted &&
+              !_isSelectingVendor &&
+              !_vendorNameFocusNode.hasFocus &&
+              _vendorSuggestions.isNotEmpty) {
+            setState(() => _vendorSuggestions.clear());
+          }
+        });
+        // A code typed by hand that matched no vendor may still have POs.
+        final code = _vendorCodeCtrl.text.trim();
+        if (code.isNotEmpty && !_isVendorFound) _loadVendorPos(code);
+      });
     _vendorNameFocusNode = FocusNode()
       ..addListener(() {
         if (!_vendorNameFocusNode.hasFocus && _vendorSuggestions.isNotEmpty) {
@@ -229,6 +263,10 @@ class _GateEntryFormPageState extends ConsumerState<GateEntryFormPage> {
       _isVendorFound = true;
       _isVendorNameReadOnly = true;
       _lastLookedUpVendorCode = entry.vendorCode;
+      if (entry.vendorCode.trim().isNotEmpty) {
+        WidgetsBinding.instance
+            .addPostFrameCallback((_) => _loadVendorPos(entry.vendorCode));
+      }
     } else {
       _materialCtrl.text = _materialCode;
       _addChallanField();
@@ -280,6 +318,9 @@ class _GateEntryFormPageState extends ConsumerState<GateEntryFormPage> {
           _checkSingleChallan(index);
         }
       }
+    });
+    field.poFocusNode.addListener(() {
+      if (!field.poFocusNode.hasFocus) _resolveTypedPo(field);
     });
     _challanFields.add(field);
   }
@@ -556,6 +597,7 @@ class _GateEntryFormPageState extends ConsumerState<GateEntryFormPage> {
     _vendorCodeFocusNode.dispose();
     _vendorNameFocusNode.dispose();
     _vendorSuggestionDebounce?.cancel();
+    _vendorCodeDebounce?.cancel();
     _challanOnChangedDebounce?.cancel();
     _vendorCtrl.dispose();
     _vendorCodeCtrl.dispose();
@@ -581,7 +623,373 @@ class _GateEntryFormPageState extends ConsumerState<GateEntryFormPage> {
       if (clearVendorName) {
         _vendorCtrl.clear();
       }
+      _vendorPos = const [];
+      _vendorPosFor = null;
+      _loadingVendorPos = false;
+      _vendorPosSeq++;
     });
+  }
+
+  /// "Change vendor": clears both the name and the code.
+  void _clearVendor() {
+    _vendorCodeDebounce?.cancel();
+    _vendorCodeCtrl.clear();
+    _resetVendorLookupState(clearVendorName: true);
+    _vendorNameFocusNode.requestFocus();
+  }
+
+  /// The vendor code was typed. Once it is a vendor's full code the name is
+  /// filled in; otherwise matching vendors are offered below the fields.
+  void _onVendorCodeChanged(String value) {
+    final code = value.trim();
+    if (_isVendorFound && code == _lastLookedUpVendorCode) return;
+    // The name and the PO list belong to the vendor that was found, which
+    // this code no longer is.
+    if (_isVendorFound || _isVendorNameReadOnly) {
+      _resetVendorLookupState(clearVendorName: true);
+    }
+    _vendorCodeDebounce?.cancel();
+    if (code.length < 2) {
+      if (_vendorSuggestions.isNotEmpty) {
+        setState(() => _vendorSuggestions.clear());
+      }
+      return;
+    }
+    _vendorCodeDebounce = Timer(const Duration(milliseconds: 400), () {
+      _fetchVendorSuggestions(code, byCode: true);
+    });
+  }
+
+  void _selectVendor(Vendor vendor) {
+    setState(() {
+      _vendorCtrl.text = vendor.vendorName;
+      if (_vendorCodeCtrl.text != vendor.vendorCode) {
+        _vendorCodeCtrl.value = TextEditingValue(
+          text: vendor.vendorCode,
+          selection: TextSelection.collapsed(offset: vendor.vendorCode.length),
+        );
+      }
+      _lastLookedUpVendorCode = vendor.vendorCode;
+      _isVendorFound = true;
+      _isVendorNameReadOnly = true;
+      _vendorSuggestions.clear();
+      _isLoadingVendorSuggestions = false;
+    });
+    _loadVendorPos(vendor.vendorCode, clearMismatched: true);
+  }
+
+  // ── Vendor master POs / materials (migration 225) ─────────────────────────
+
+  /// Vendor codes compare as the server does: trimmed, without leading zeros,
+  /// ignoring case.
+  static String _codeKey(String code) =>
+      code.trim().replaceFirst(RegExp(r'^0+'), '').toUpperCase();
+
+  static bool _same(String? a, String? b) =>
+      (a ?? '').trim().toUpperCase() == (b ?? '').trim().toUpperCase();
+
+  bool get _vendorChosen => _vendorCodeCtrl.text.trim().isNotEmpty;
+
+  VendorPoMaterial? _vendorPoOf(String po) {
+    if (po.trim().isEmpty) return null;
+    for (final r in _vendorPos) {
+      if (_same(r.poNumber, po)) return r;
+    }
+    return null;
+  }
+
+  List<String> _vendorMaterials() {
+    final seen = <String>{};
+    final out = <String>[];
+    for (final r in _vendorPos) {
+      final m = r.materialCode;
+      if (m != null && seen.add(m.toUpperCase())) out.add(m);
+    }
+    return out;
+  }
+
+  /// Load [vendorCode]'s POs. With [clearMismatched], rows already holding a
+  /// PO of some OTHER vendor are emptied (only when this vendor has POs to
+  /// choose from), so a vendor change cannot leave a wrong PO behind.
+  Future<void> _loadVendorPos(String vendorCode,
+      {bool clearMismatched = false}) async {
+    final key = _codeKey(vendorCode);
+    if (key.isEmpty || key == _vendorPosFor) return;
+    final seq = ++_vendorPosSeq;
+    setState(() {
+      _loadingVendorPos = true;
+      _vendorPos = const [];
+      _vendorPosFor = null;
+    });
+    final rows = await ref
+        .read(gateEntryRepositoryProvider)
+        .getVendorPurchaseOrders(vendorCode);
+    if (!mounted || seq != _vendorPosSeq) return;
+    var cleared = 0;
+    setState(() {
+      _loadingVendorPos = false;
+      _vendorPos = rows;
+      _vendorPosFor = key;
+      if (clearMismatched && rows.isNotEmpty) {
+        for (final f in _challanFields) {
+          final po = f.poNumberController.text.trim();
+          if (po.isNotEmpty && !rows.any((r) => _same(r.poNumber, po))) {
+            f.poNumberController.clear();
+            f.partNumberController.clear();
+            cleared++;
+          }
+        }
+      }
+    });
+    if (cleared > 0 && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        behavior: SnackBarBehavior.floating,
+        content: Text(cleared == 1
+            ? 'Cleared a PO that belongs to another vendor. Pick one of this vendor\'s POs.'
+            : 'Cleared $cleared POs that belong to another vendor. Pick this vendor\'s POs.'),
+      ));
+    }
+  }
+
+  /// Put a PO (and its material) into a row. A PO chosen before any vendor
+  /// also fills the vendor. [keepMaterial] leaves a material already typed.
+  void _applyPo(_ChallanFieldState f, VendorPoMaterial r,
+      {bool keepMaterial = false}) {
+    final fillVendor = !_vendorChosen && r.vendorCode.isNotEmpty;
+    setState(() {
+      f.poNumberController.text = r.poNumber;
+      final material = r.materialCode;
+      if (material != null &&
+          (!keepMaterial || f.partNumberController.text.trim().isEmpty)) {
+        f.partNumberController.text = material;
+      }
+      if (fillVendor) {
+        _vendorCodeCtrl.text = r.vendorCode;
+        _lastLookedUpVendorCode = r.vendorCode;
+        final name = r.vendorName ?? '';
+        if (name.isNotEmpty) {
+          _vendorCtrl.text = name;
+          _isVendorFound = true;
+          _isVendorNameReadOnly = true;
+        }
+        _vendorSuggestions.clear();
+      }
+    });
+    if (fillVendor) _loadVendorPos(r.vendorCode);
+  }
+
+  /// PO typed by hand: an exact match of the vendor's PO fills an empty
+  /// material at once.
+  void _onPoTyped(_ChallanFieldState f, String value) {
+    final match = _vendorPoOf(value);
+    setState(() {
+      if (match?.materialCode != null &&
+          f.partNumberController.text.trim().isEmpty) {
+        f.partNumberController.text = match!.materialCode!;
+      }
+    });
+  }
+
+  /// PO typed with no vendor chosen yet: if the vendor master knows exactly
+  /// that PO, fill in its vendor and material.
+  Future<void> _resolveTypedPo(_ChallanFieldState f) async {
+    final po = f.poNumberController.text.trim();
+    if (po.length < 3 || _vendorChosen) return;
+    final rows =
+        await ref.read(gateEntryRepositoryProvider).searchPurchaseOrders(po);
+    if (!mounted ||
+        _vendorChosen ||
+        !_challanFields.contains(f) ||
+        f.poNumberController.text.trim() != po) {
+      return;
+    }
+    final exact = rows.where((r) => _same(r.poNumber, po)).toList();
+    if (exact.length == 1) _applyPo(f, exact.first, keepMaterial: true);
+  }
+
+  Future<void> _pickPo(_ChallanFieldState f) async {
+    final repo = ref.read(gateEntryRepositoryProvider);
+    final vendorPos = _vendorPos;
+    final material = f.partNumberController.text.trim();
+    final vendorName = _vendorCtrl.text.trim();
+    final picked = await showSearchPicker<VendorPoMaterial>(
+      context,
+      title: vendorPos.isNotEmpty
+          ? 'POs of ${vendorName.isNotEmpty ? vendorName : _vendorCodeCtrl.text.trim()}'
+          : 'Find a purchase order',
+      load: (q) async {
+        if (vendorPos.isEmpty) return repo.searchPurchaseOrders(q);
+        final ql = q.toLowerCase();
+        final hits = vendorPos
+            .where((r) =>
+                ql.isEmpty ||
+                r.poNumber.toLowerCase().contains(ql) ||
+                (r.materialCode ?? '').toLowerCase().contains(ql))
+            .toList();
+        // The row's material first: those are the likely POs.
+        return [
+          ...hits.where((r) => _same(r.materialCode, material)),
+          ...hits.where((r) => !_same(r.materialCode, material)),
+        ];
+      },
+      minChars: vendorPos.isNotEmpty ? 0 : 3,
+      hint: 'Type at least 3 digits of the PO number. Choosing a PO fills in its vendor.',
+      titleOf: (r) => 'PO ${r.poNumber}',
+      subtitleOf: (r) => [
+        if (r.materialCode != null) 'Material ${r.materialCode}',
+        if (vendorPos.isEmpty)
+          '${r.vendorName ?? 'Vendor'} (${r.vendorCode})',
+      ].join('  ·  '),
+      searchHint: vendorPos.isNotEmpty ? 'Search PO or material' : 'PO number',
+      emptyText: vendorPos.isNotEmpty
+          ? 'No PO of this vendor matches'
+          : 'No such PO in the vendor master',
+    );
+    if (picked == null || !mounted) return;
+    _applyPo(f, picked);
+  }
+
+  Future<void> _pickMaterial(_ChallanFieldState f) async {
+    final materials = _vendorMaterials();
+    final rowPo = _vendorPoOf(f.poNumberController.text.trim());
+    final vendorName = _vendorCtrl.text.trim();
+    final picked = await showSearchPicker<String>(
+      context,
+      title: 'Materials of ${vendorName.isNotEmpty ? vendorName : _vendorCodeCtrl.text.trim()}',
+      load: (q) async {
+        final ql = q.toLowerCase();
+        final hits =
+            materials.where((m) => ql.isEmpty || m.toLowerCase().contains(ql));
+        // The material of the row's PO first.
+        return [
+          ...hits.where((m) => _same(m, rowPo?.materialCode)),
+          ...hits.where((m) => !_same(m, rowPo?.materialCode)),
+        ];
+      },
+      titleOf: (m) => m,
+      subtitleOf: (m) {
+        final pos = _vendorPos.where((r) => _same(r.materialCode, m)).toList();
+        return pos.length == 1 ? 'PO ${pos.first.poNumber}' : '${pos.length} POs';
+      },
+      searchHint: 'Search material',
+      emptyText: 'No material of this vendor matches',
+    );
+    if (picked == null || !mounted) return;
+    _applyMaterial(f, picked);
+  }
+
+  /// Put a material into a row. Its PO follows when the vendor has exactly
+  /// one PO for it; a PO left over for another material is cleared.
+  void _applyMaterial(_ChallanFieldState f, String material) {
+    final pos = _vendorPos.where((r) => _same(r.materialCode, material)).toList();
+    setState(() {
+      f.partNumberController.text = material;
+      final current = _vendorPoOf(f.poNumberController.text.trim());
+      final currentFits = current != null && _same(current.materialCode, material);
+      if (!currentFits) {
+        if (pos.length == 1) {
+          f.poNumberController.text = pos.first.poNumber;
+        } else if (current != null) {
+          f.poNumberController.clear();
+        }
+      }
+    });
+  }
+
+  ({String? text, bool warn}) _poHint(_ChallanFieldState f) {
+    final po = f.poNumberController.text.trim();
+    if (_loadingVendorPos) {
+      return (text: 'Loading this vendor\'s POs…', warn: false);
+    }
+    if (_vendorPos.isNotEmpty) {
+      if (po.isEmpty) {
+        final n = _vendorPos.map((r) => r.poNumber).toSet().length;
+        return (text: 'Tap ▼ to pick from $n PO${n == 1 ? '' : 's'} of this vendor', warn: false);
+      }
+      if (_vendorPoOf(po) == null) {
+        return (text: 'Not in vendor master for this vendor', warn: true);
+      }
+      return (text: null, warn: false);
+    }
+    if (_vendorChosen && _vendorPosFor != null) {
+      return po.isEmpty
+          ? (text: 'No POs in vendor master for this vendor', warn: false)
+          : (text: 'Not in vendor master for this vendor', warn: true);
+    }
+    if (!_vendorChosen) {
+      return (text: 'Tap ▼ to find a PO — it fills in the vendor', warn: false);
+    }
+    return (text: null, warn: false);
+  }
+
+  ({String? text, bool warn}) _materialHint(_ChallanFieldState f) {
+    if (_loadingVendorPos || _vendorPos.isEmpty) return (text: null, warn: false);
+    final material = f.partNumberController.text.trim();
+    if (material.isEmpty) {
+      return (text: 'Tap ▼ to pick from this vendor\'s materials', warn: false);
+    }
+    final po = _vendorPoOf(f.poNumberController.text.trim());
+    if (po?.materialCode != null && !_same(po!.materialCode, material)) {
+      return (text: 'PO ${po.poNumber} is for material ${po.materialCode}', warn: true);
+    }
+    if (!_vendorPos.any((r) => _same(r.materialCode, material))) {
+      return (text: 'Not in vendor master for this vendor', warn: true);
+    }
+    return (text: null, warn: false);
+  }
+
+  TextStyle? _hintStyle(bool warn) => warn
+      ? TextStyle(color: Colors.orange.shade800, fontWeight: FontWeight.w600)
+      : null;
+
+  Widget _buildPoField(_ChallanFieldState f) {
+    final hint = _poHint(f);
+    final canPick = _vendorPos.isNotEmpty || !_vendorChosen;
+    return TextFormField(
+      controller: f.poNumberController,
+      focusNode: f.poFocusNode,
+      decoration: InputDecoration(
+        labelText: 'PO Number (Optional)',
+        prefixIcon: const Icon(Icons.request_quote),
+        helperText: hint.text,
+        helperMaxLines: 2,
+        helperStyle: _hintStyle(hint.warn),
+        suffixIcon: canPick
+            ? IconButton(
+                tooltip: _vendorPos.isNotEmpty
+                    ? 'Pick a PO of this vendor'
+                    : 'Find a PO in the vendor master',
+                icon: const Icon(Icons.arrow_drop_down_circle_outlined),
+                onPressed: _loadingVendorPos ? null : () => _pickPo(f),
+              )
+            : null,
+      ),
+      onChanged: (v) => _onPoTyped(f, v),
+      validator: (_) => null,
+    );
+  }
+
+  Widget _buildMaterialField(_ChallanFieldState f) {
+    final hint = _materialHint(f);
+    return TextFormField(
+      controller: f.partNumberController,
+      decoration: InputDecoration(
+        labelText: 'Material / Part Number (Optional)',
+        prefixIcon: const Icon(Icons.category),
+        helperText: hint.text,
+        helperMaxLines: 2,
+        helperStyle: _hintStyle(hint.warn),
+        suffixIcon: _vendorPos.isNotEmpty && !_loadingVendorPos
+            ? IconButton(
+                tooltip: 'Pick a material of this vendor',
+                icon: const Icon(Icons.arrow_drop_down_circle_outlined),
+                onPressed: () => _pickMaterial(f),
+              )
+            : null,
+      ),
+      onChanged: (_) => setState(() {}),
+      validator: (_) => null,
+    );
   }
 
   void _onVendorNameChanged(String value) {
@@ -604,7 +1012,8 @@ class _GateEntryFormPageState extends ConsumerState<GateEntryFormPage> {
     });
   }
 
-  Future<void> _fetchVendorSuggestions(String query) async {
+  Future<void> _fetchVendorSuggestions(String query,
+      {bool byCode = false}) async {
     if (!mounted || _isVendorNameReadOnly) return;
     setState(() {
       _isLoadingVendorSuggestions = true;
@@ -614,10 +1023,22 @@ class _GateEntryFormPageState extends ConsumerState<GateEntryFormPage> {
     final result = await repo.searchVendors(query);
 
     if (!mounted) return;
-    final currentQuery = _vendorCtrl.text.trim();
-    if (currentQuery != query) {
+    final currentQuery =
+        byCode ? _vendorCodeCtrl.text.trim() : _vendorCtrl.text.trim();
+    if (currentQuery != query || _isVendorFound) {
       setState(() => _isLoadingVendorSuggestions = false);
       return;
+    }
+
+    // The full code of exactly one vendor: that is the vendor.
+    if (byCode && result.success && result.data != null) {
+      final key = _codeKey(query);
+      final exact =
+          result.data!.where((v) => _codeKey(v.vendorCode) == key).toList();
+      if (exact.length == 1) {
+        _selectVendor(exact.first);
+        return;
+      }
     }
 
     setState(() {
@@ -1102,25 +1523,11 @@ class _GateEntryFormPageState extends ConsumerState<GateEntryFormPage> {
                 return null;
               },
             ),
-            TextFormField(
-              controller: _challanFields[i].poNumberController,
-              decoration: const InputDecoration(
-                labelText: 'PO Number (Optional)',
-                prefixIcon: Icon(Icons.request_quote),
-              ),
-              validator: (_) => null,
-            ),
+            _buildPoField(_challanFields[i]),
           ),
           const SizedBox(height: 12),
           _buildDesktopOrMobileRow(
-            TextFormField(
-              controller: _challanFields[i].partNumberController,
-              decoration: const InputDecoration(
-                labelText: 'Part Number (Optional)',
-                prefixIcon: Icon(Icons.category),
-              ),
-              validator: (_) => null,
-            ),
+            _buildMaterialField(_challanFields[i]),
             TextFormField(
               controller: _challanFields[i].quantityController,
               keyboardType: TextInputType.number,
@@ -1382,8 +1789,18 @@ class _GateEntryFormPageState extends ConsumerState<GateEntryFormPage> {
                             labelText: 'Vendor Name',
                             prefixIcon: const Icon(Icons.storefront),
                             suffixIcon: _isVendorFound
-                                ? const Icon(Icons.check_circle,
-                                    color: Colors.green)
+                                ? Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const Icon(Icons.check_circle,
+                                          color: Colors.green),
+                                      IconButton(
+                                        tooltip: 'Change vendor',
+                                        icon: const Icon(Icons.close),
+                                        onPressed: _clearVendor,
+                                      ),
+                                    ],
+                                  )
                                 : (_isLoadingVendorSuggestions
                                     ? const Padding(
                                         padding: EdgeInsets.all(12.0),
@@ -1414,20 +1831,10 @@ class _GateEntryFormPageState extends ConsumerState<GateEntryFormPage> {
                           decoration: const InputDecoration(
                             labelText: 'Vendor Code (Optional)',
                             prefixIcon: Icon(Icons.badge_outlined),
+                            helperText:
+                                'Type the code or the name: the other fills in',
                           ),
-                          onChanged: (value) {
-                            // Only reset if the user is actually typing/changing the value,
-                            // not if it's the same as the last selection/lookup.
-                            if (_isVendorFound &&
-                                value == _lastLookedUpVendorCode) {
-                              return;
-                            }
-
-                            if (_isVendorFound || _isVendorNameReadOnly) {
-                              _resetVendorLookupState(clearVendorName: false);
-                            }
-                          },
-                          // Removed mandatory validation and lookup
+                          onChanged: _onVendorCodeChanged,
                         ),
                       ),
                       if (!_isVendorNameReadOnly &&
@@ -1462,22 +1869,8 @@ class _GateEntryFormPageState extends ConsumerState<GateEntryFormPage> {
                                   // Mark as selecting to prevent focus loss from clearing suggestions
                                   _isSelectingVendor = true;
 
-                                  setState(() {
-                                    // 1. Update controllers
-                                    _vendorCtrl.text = suggestion.vendorName;
-                                    _vendorCodeCtrl.text =
-                                        suggestion.vendorCode;
-
-                                    // 2. Update lookup states
-                                    _lastLookedUpVendorCode =
-                                        suggestion.vendorCode;
-                                    _isVendorFound = true;
-                                    _isVendorNameReadOnly = true;
-
-                                    // 3. Clear suggestions
-                                    _vendorSuggestions.clear();
-                                    _isLoadingVendorSuggestions = false;
-                                  });
+                                  _vendorCodeDebounce?.cancel();
+                                  _selectVendor(suggestion);
 
                                   // Give a tiny frame gap for state to settle
                                   await Future.delayed(Duration.zero);
@@ -2042,6 +2435,10 @@ class _GateEntryFormPageState extends ConsumerState<GateEntryFormPage> {
 
       _refreshLocalDuplicateErrors();
     });
+
+    // The scanned vendor's POs, so the PO and part fields can be checked.
+    final scannedVendorCode = str('vendorCode');
+    if (scannedVendorCode != null) _loadVendorPos(scannedVendorCode);
 
     // Re-run the server-side challan check on what was just filled. The scan
     // already reported a duplicate, but the form owns that state and the

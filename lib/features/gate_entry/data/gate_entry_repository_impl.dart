@@ -8,6 +8,7 @@ import '../../../../core/network/pagination_model.dart';
 import '../domain/gate_entry_repository.dart';
 import '../domain/models/attachment.dart';
 import '../domain/models/deleted_gate_entry.dart';
+import '../../vendor/domain/models/vendor_po_material.dart';
 import '../domain/models/gate_entry.dart';
 import '../domain/models/gate_entry_item.dart';
 import '../domain/models/gate_entry_list_response.dart';
@@ -686,6 +687,38 @@ class GateEntryRepositoryImpl implements GateEntryRepository {
         message: 'Vendor search failed',
         error: ApiError(message: e.toString()),
       );
+    }
+  }
+
+  @override
+  Future<List<VendorPoMaterial>> getVendorPurchaseOrders(
+      String vendorCode) async {
+    final code = vendorCode.trim();
+    if (code.isEmpty) return const [];
+    try {
+      final response = await _apiClient.getRaw(
+        '/gate-entries/purchase-orders',
+        queryParameters: {'vendorCode': code},
+      );
+      return VendorPoMaterial.listFrom(response['data']);
+    } catch (_) {
+      // Non-fatal: the PO and material fields stay plain text fields.
+      return const [];
+    }
+  }
+
+  @override
+  Future<List<VendorPoMaterial>> searchPurchaseOrders(String query) async {
+    final q = query.trim();
+    if (q.length < 3) return const [];
+    try {
+      final response = await _apiClient.getRaw(
+        '/gate-entries/purchase-orders',
+        queryParameters: {'q': q},
+      );
+      return VendorPoMaterial.listFrom(response['data']);
+    } catch (_) {
+      return const [];
     }
   }
 

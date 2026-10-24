@@ -8,6 +8,7 @@ import 'models/gate_entry_list_response.dart';
 import 'models/gate_entry_query.dart';
 import 'models/scanned_document.dart';
 import 'models/vendor.dart';
+import '../../vendor/domain/models/vendor_po_material.dart';
 
 abstract class GateEntryRepository {
   Future<ApiResponse<GateEntryListResponse>> getGateEntries({
@@ -77,6 +78,14 @@ abstract class GateEntryRepository {
   });
   Future<ApiResponse<String>> getAttachmentUrl(String id, String attachmentId);
   Future<ApiResponse<List<Vendor>>> searchVendors(String query);
+
+  /// Every purchase order (and its material) the vendor master holds for
+  /// [vendorCode]. Empty when the vendor has none or the lookup fails.
+  Future<List<VendorPoMaterial>> getVendorPurchaseOrders(String vendorCode);
+
+  /// Purchase orders whose number contains [query] (3+ characters), each with
+  /// its vendor — for a PO typed before the vendor is chosen.
+  Future<List<VendorPoMaterial>> searchPurchaseOrders(String query);
   Future<ApiResponse<CheckChallanUniquenessResponse>> checkChallanUniqueness(
     String challanNo, {
     String? vendorCode,

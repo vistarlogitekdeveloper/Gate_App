@@ -1,11 +1,17 @@
 import 'dart:async';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 import '../../../core/auth/session_controller.dart';
 import '../../../core/auth/session_state.dart';
+import '../../../core/auth/user_role.dart';
+import '../../../core/ui/widgets/progress_dialog.dart';
+import '../../gate_entry/presentation/widgets/search_picker_dialog.dart';
+import '../data/vendor_repository_impl.dart';
+import '../domain/models/vendor_po_material.dart';
 import '../../../core/ui/responsive.dart';
 import '../../../core/ui/widgets/ribbon.dart';
 import '../../../core/ui/widgets/section_header.dart';
@@ -132,6 +138,115 @@ class _VendorMasterPageState extends ConsumerState<VendorMasterPage> {
     }
   }
 
+  bool get _isAdmin {
+    final session = ref.read(sessionControllerProvider);
+    return session is Authenticated && session.role == UserRole.admin;
+  }
+
+  void _showError(Object e) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      backgroundColor: Theme.of(context).colorScheme.error,
+      content: Text(
+        e.toString().replaceFirst('Exception: ', ''),
+        style: TextStyle(color: Theme.of(context).colorScheme.onError),
+      ),
+    ));
+  }
+
+  /// Replace the purchase vendors and their POs / materials from the client's
+  /// SAP export (admin only). Always previews first; nothing is written until
+  /// the admin confirms a file without errors.
+  Future<void> _openImport() async {
+    final picked = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: const ['xlsx', 'xls', 'csv'],
+      withData: true,
+    );
+    if (picked == null || picked.files.isEmpty || !mounted) return;
+    final file = picked.files.single;
+    final bytes = file.bytes;
+    if (bytes == null) {
+      _showError('Could not read the selected file.');
+      return;
+    }
+    final repo = ref.read(vendorRepositoryProvider);
+    Future<VendorImportSummary> send(bool dryRun) => repo.importVendorMaster(
+          fileName: file.name,
+          bytes: bytes,
+          dryRun: dryRun,
+        );
+
+    VendorImportSummary preview;
+    try {
+      preview = await runWithProgressDialog(context, () => send(true),
+          label: 'Reading the file...');
+    } catch (e) {
+      _showError(e);
+      return;
+    }
+    if (!mounted) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) =>
+          _ImportPreviewDialog(summary: preview, fileName: file.name),
+    );
+    if (confirmed != true || !mounted) return;
+
+    try {
+      final done = await runWithProgressDialog(context, () => send(false),
+          label: 'Replacing the vendor master...');
+      if (!mounted) return;
+      ref.invalidate(vendorListProvider);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        backgroundColor: Colors.green.shade700,
+        content: Text(
+          'Vendor master replaced: ${done.vendors} vendors, '
+          '${done.purchaseOrders} POs, ${done.materials} materials'
+          '${done.deleted > 0 ? '; ${done.deleted} old vendors deleted' : ''}.',
+          style: const TextStyle(color: Colors.white),
+        ),
+      ));
+    } catch (e) {
+      _showError(e);
+    }
+  }
+
+  Future<void> _showVendorPos(Vendor vendor) async {
+    List<VendorPoMaterial> rows;
+    try {
+      rows = await runWithProgressDialog(
+        context,
+        () => ref.read(vendorRepositoryProvider).getVendorPurchaseOrders(vendor.id),
+        label: 'Loading POs...',
+      );
+    } catch (e) {
+      _showError(e);
+      return;
+    }
+    if (!mounted) return;
+    await showSearchPicker<VendorPoMaterial>(
+      context,
+      title: '${vendor.vendorName} (${vendor.vendorCode})',
+      load: (q) async {
+        final ql = q.toLowerCase();
+        return rows
+            .where((r) =>
+                ql.isEmpty ||
+                r.poNumber.toLowerCase().contains(ql) ||
+                (r.materialCode ?? '').toLowerCase().contains(ql))
+            .toList();
+      },
+      titleOf: (r) => 'PO ${r.poNumber}',
+      subtitleOf: (r) =>
+          r.materialCode == null ? null : 'Material ${r.materialCode}',
+      searchHint: 'Search PO or material',
+      emptyText: rows.isEmpty
+          ? 'No purchase orders in the vendor master for this vendor.'
+          : 'No PO or material matches.',
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final query = ref.watch(vendorListQueryProvider);
@@ -150,6 +265,12 @@ class _VendorMasterPageState extends ConsumerState<VendorMasterPage> {
           ],
         ),
         actions: [
+          if (mob && _isAdmin)
+            IconButton(
+              tooltip: 'Import from Excel',
+              onPressed: _openImport,
+              icon: const Icon(Icons.upload_file_rounded),
+            ),
           IconButton(
             tooltip: 'Refresh',
             onPressed: () => ref.invalidate(vendorListProvider),
@@ -184,13 +305,27 @@ class _VendorMasterPageState extends ConsumerState<VendorMasterPage> {
           children: [
             SectionHeader(
               title: 'Manage Vendors',
-              subtitle: 'Search, add, update or remove vendor master records.',
+              subtitle: 'Search, add, update or remove vendor master records, '
+                  'with each vendor\'s purchase orders and materials.',
               trailing: mob
                   ? null
-                  : RibbonButton(
-                      label: 'Add Vendor',
-                      icon: Icons.add_circle_outline,
-                      onPressed: _openCreate,
+                  : Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (_isAdmin) ...[
+                          OutlinedButton.icon(
+                            onPressed: _openImport,
+                            icon: const Icon(Icons.upload_file_rounded),
+                            label: const Text('Import from Excel'),
+                          ),
+                          const SizedBox(width: 12),
+                        ],
+                        RibbonButton(
+                          label: 'Add Vendor',
+                          icon: Icons.add_circle_outline,
+                          onPressed: _openCreate,
+                        ),
+                      ],
                     ),
             ),
             const SizedBox(height: 12),
@@ -240,6 +375,7 @@ class _VendorMasterPageState extends ConsumerState<VendorMasterPage> {
                             vendor: v,
                             onEdit: () => _openEdit(v),
                             onDelete: () => _confirmDelete(v),
+                            onShowPos: () => _showVendorPos(v),
                           );
                         },
                       )
@@ -247,6 +383,7 @@ class _VendorMasterPageState extends ConsumerState<VendorMasterPage> {
                         vendors: result.vendors,
                         onEdit: _openEdit,
                         onDelete: _confirmDelete,
+                        onShowPos: _showVendorPos,
                       );
               },
             ),
@@ -388,11 +525,13 @@ class _VendorTable extends StatelessWidget {
   final List<Vendor> vendors;
   final void Function(Vendor vendor) onEdit;
   final void Function(Vendor vendor) onDelete;
+  final void Function(Vendor vendor) onShowPos;
 
   const _VendorTable({
     required this.vendors,
     required this.onEdit,
     required this.onDelete,
+    required this.onShowPos,
   });
 
   @override
@@ -427,6 +566,8 @@ class _VendorTable extends StatelessWidget {
             columns: const [
               DataColumn(label: Text('Vendor Code')),
               DataColumn(label: Text('Vendor Name')),
+              DataColumn(label: Text('Purchase Orders'), numeric: true),
+              DataColumn(label: Text('Materials'), numeric: true),
               DataColumn(label: Text('Type')),
               DataColumn(label: Text('Status')),
               DataColumn(label: Text('Updated')),
@@ -446,6 +587,14 @@ class _VendorTable extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                   ),
                 )),
+                DataCell(
+                  _CountLink(count: v.purchaseOrderCount),
+                  onTap: v.purchaseOrderCount > 0 ? () => onShowPos(v) : null,
+                ),
+                DataCell(
+                  _CountLink(count: v.materialCount),
+                  onTap: v.materialCount > 0 ? () => onShowPos(v) : null,
+                ),
                 DataCell(_TypeChip(type: v.vendorType)),
                 DataCell(_StatusChip(active: v.isActive)),
                 DataCell(Text(_formatDate(v.updatedAt ?? v.createdAt))),
@@ -480,11 +629,13 @@ class _VendorCard extends StatelessWidget {
   final Vendor vendor;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
+  final VoidCallback onShowPos;
 
   const _VendorCard({
     required this.vendor,
     required this.onEdit,
     required this.onDelete,
+    required this.onShowPos,
   });
 
   @override
@@ -535,6 +686,26 @@ class _VendorCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 6),
+            InkWell(
+              onTap: vendor.purchaseOrderCount > 0 ? onShowPos : null,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 2),
+                child: Text(
+                  '${vendor.purchaseOrderCount} PO${vendor.purchaseOrderCount == 1 ? '' : 's'}'
+                  '  ·  ${vendor.materialCount} material${vendor.materialCount == 1 ? '' : 's'}',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: vendor.purchaseOrderCount > 0
+                        ? theme.colorScheme.primary
+                        : theme.colorScheme.onSurfaceVariant,
+                    decoration: vendor.purchaseOrderCount > 0
+                        ? TextDecoration.underline
+                        : null,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 6),
             Text(
               'Updated: ${_formatDate(vendor.updatedAt ?? vendor.createdAt)}',
               style: theme.textTheme.bodySmall?.copyWith(
@@ -564,6 +735,147 @@ class _VendorCard extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// A count that opens the vendor's PO list when there is something to show.
+class _CountLink extends StatelessWidget {
+  final int count;
+
+  const _CountLink({required this.count});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    if (count == 0) {
+      return Text('0',
+          style: TextStyle(color: theme.colorScheme.onSurfaceVariant));
+    }
+    return Text(
+      '$count',
+      style: TextStyle(
+        fontWeight: FontWeight.w700,
+        color: theme.colorScheme.primary,
+        decoration: TextDecoration.underline,
+      ),
+    );
+  }
+}
+
+/// What an import will do; "Replace" only when the file has no row errors.
+class _ImportPreviewDialog extends StatelessWidget {
+  final VendorImportSummary summary;
+  final String fileName;
+
+  const _ImportPreviewDialog({required this.summary, required this.fileName});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final error = theme.colorScheme.error;
+    final s = summary;
+    final hasErrors = s.errorCount > 0;
+
+    Widget line(String label, int value, {Color? color}) => Padding(
+          padding: const EdgeInsets.symmetric(vertical: 3),
+          child: Row(
+            children: [
+              Expanded(child: Text(label)),
+              Text('$value',
+                  style: TextStyle(fontWeight: FontWeight.w700, color: color)),
+            ],
+          ),
+        );
+
+    return AlertDialog(
+      title: Text(hasErrors ? 'File has errors' : 'Replace vendor master?'),
+      content: SizedBox(
+        width: 520,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(fileName, style: theme.textTheme.bodySmall),
+              const SizedBox(height: 12),
+              line('Suppliers in the file', s.vendors),
+              line('Purchase orders', s.purchaseOrders),
+              line('Materials', s.materials),
+              const Divider(height: 20),
+              line('New suppliers', s.added),
+              line('Name changed', s.renamed),
+              line('Switched back on', s.reactivated),
+              line('Unchanged', s.unchanged),
+              line('Deleted (not in the file)', s.deleted,
+                  color: s.deleted > 0 ? error : null),
+              if (s.deletedVendors.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Container(
+                  constraints: const BoxConstraints(maxHeight: 160),
+                  decoration: BoxDecoration(
+                    color: error.withValues(alpha: 0.06),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: ListView(
+                    shrinkWrap: true,
+                    padding: const EdgeInsets.all(8),
+                    children: [
+                      for (final v in s.deletedVendors)
+                        Text('${v.vendorCode}  ${v.vendorName}',
+                            style: theme.textTheme.bodySmall),
+                    ],
+                  ),
+                ),
+              ],
+              const SizedBox(height: 12),
+              Text(
+                'The purchase order and material list is replaced by the '
+                'file. Sold-to vendors are not affected. Old gate entries keep '
+                'their vendor, PO and material.',
+                style: theme.textTheme.bodySmall,
+              ),
+              if (s.warnings.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                for (final w in s.warnings)
+                  Text('• $w',
+                      style: theme.textTheme.bodySmall
+                          ?.copyWith(color: Colors.orange.shade800)),
+              ],
+              if (hasErrors) ...[
+                const SizedBox(height: 12),
+                Text(
+                  '${s.errorCount} row${s.errorCount == 1 ? '' : 's'} need fixing '
+                  'before anything can be imported:',
+                  style: TextStyle(color: error, fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 6),
+                for (final e in s.errors)
+                  Text('Row ${e.row}: ${e.message}',
+                      style: theme.textTheme.bodySmall?.copyWith(color: error)),
+                if (s.errorCount > s.errors.length)
+                  Text('…and ${s.errorCount - s.errors.length} more.',
+                      style: theme.textTheme.bodySmall?.copyWith(color: error)),
+              ],
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(false),
+          child: Text(hasErrors ? 'Close' : 'Cancel'),
+        ),
+        if (!hasErrors)
+          FilledButton.icon(
+            style: FilledButton.styleFrom(
+              backgroundColor: s.deleted > 0 ? error : null,
+            ),
+            onPressed: () => Navigator.of(context).pop(true),
+            icon: const Icon(Icons.published_with_changes_rounded, size: 18),
+            label: const Text('Replace vendor master'),
+          ),
+      ],
     );
   }
 }

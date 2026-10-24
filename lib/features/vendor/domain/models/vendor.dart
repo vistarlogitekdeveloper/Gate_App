@@ -25,6 +25,11 @@ class Vendor {
   final DateTime? createdAt;
   final DateTime? updatedAt;
 
+  /// How many purchase orders / materials the vendor master holds for this
+  /// vendor (filled by the list endpoint; 0 elsewhere).
+  final int purchaseOrderCount;
+  final int materialCount;
+
   const Vendor({
     required this.id,
     required this.vendorCode,
@@ -33,6 +38,8 @@ class Vendor {
     required this.isActive,
     this.createdAt,
     this.updatedAt,
+    this.purchaseOrderCount = 0,
+    this.materialCount = 0,
   });
 
   factory Vendor.fromJson(Map<String, dynamic> json) {
@@ -47,6 +54,8 @@ class Vendor {
       isActive: _toBool(json['isActive'] ?? json['is_active']) ?? true,
       createdAt: _toDate(json['createdAt'] ?? json['created_at']),
       updatedAt: _toDate(json['updatedAt'] ?? json['updated_at']),
+      purchaseOrderCount: (json['purchaseOrderCount'] as num?)?.toInt() ?? 0,
+      materialCount: (json['materialCount'] as num?)?.toInt() ?? 0,
     );
   }
 
