@@ -1,9 +1,11 @@
+import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/network/api_client.dart';
 import '../../../core/network/api_endpoints.dart';
 import '../../../core/network/dio_provider.dart';
 import '../domain/models/vendor.dart';
+import '../domain/models/vendor_po_material.dart';
 import '../domain/vendor_repository.dart';
 
 final vendorRepositoryProvider = Provider<VendorRepository>((ref) {
@@ -128,6 +130,41 @@ class VendorRepositoryImpl implements VendorRepository {
       throw Exception('Server returned no vendor data');
     }
     return Vendor.fromJson(data);
+  }
+
+  @override
+  Future<List<VendorPoMaterial>> getVendorPurchaseOrders(String id) async {
+    final response = await _apiClient
+        .getRaw('${ApiEndpoints.vendorMasterDetails(id)}/purchase-orders');
+    return VendorPoMaterial.listFrom(response['data']);
+  }
+
+  @override
+  Future<VendorImportSummary> importVendorMaster({
+    required String fileName,
+    String? filePath,
+    List<int>? bytes,
+    required bool dryRun,
+  }) async {
+    final MultipartFile filePart;
+    if (filePath != null && filePath.isNotEmpty) {
+      filePart = await MultipartFile.fromFile(filePath, filename: fileName);
+    } else if (bytes != null) {
+      filePart = MultipartFile.fromBytes(bytes, filename: fileName);
+    } else {
+      throw Exception('Could not read the selected file.');
+    }
+    // postRaw throws with the server's message on a 4xx/5xx.
+    final response = await _apiClient.postRaw(
+      '${ApiEndpoints.vendorMaster}/import',
+      data: FormData.fromMap({'file': filePart}),
+      queryParameters: dryRun ? const {'dryRun': 'true'} : null,
+    );
+    final data = response['data'];
+    if (response['success'] != true || data is! Map<String, dynamic>) {
+      throw Exception(response['message']?.toString() ?? 'Import failed');
+    }
+    return VendorImportSummary.fromJson(data);
   }
 
   @override
