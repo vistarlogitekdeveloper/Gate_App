@@ -41,8 +41,11 @@ class AppScaffold extends ConsumerWidget {
       if (showVendorMaster) 4,
       if (showDeletedEntries) 5,
     ];
-    final navigationIndex =
-        visibleIndexes.indexOf(selectedIndex).clamp(0, visibleIndexes.length - 1);
+    // Count Sheets (6) is a sidebar item only; on the bottom bar it belongs
+    // to Gate Entry, where its button lives.
+    final navigationIndex = visibleIndexes
+        .indexOf(selectedIndex == 6 ? 1 : selectedIndex)
+        .clamp(0, visibleIndexes.length - 1);
 
     final device = deviceClass(context);
     final desktop = device == DeviceClass.desktop || device == DeviceClass.wide;
@@ -290,6 +293,13 @@ class _DesktopSidebar extends StatelessWidget {
                   label: 'Gate Entry',
                   isSelected: selectedIndex == 1,
                   onTap: () => onSelect(1),
+                ),
+                _SidebarItem(
+                  icon: Icons.fact_check_outlined,
+                  activeIcon: Icons.fact_check_rounded,
+                  label: 'Count Sheets',
+                  isSelected: selectedIndex == 6,
+                  onTap: () => onSelect(6),
                 ),
                 if (showReconciliation) ...[
                   const SizedBox(height: 22),

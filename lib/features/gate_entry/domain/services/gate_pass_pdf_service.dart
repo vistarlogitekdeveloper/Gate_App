@@ -34,6 +34,7 @@ class GatePassPdfService {
       challanNo: entry.challanNo,
       vehicleNo: entry.vehicleNo,
       lrNumber: entry.lrNumber,
+      countSheetNo: entry.countSheetNo,
       items: entry.items.map(_fromGateEntryItem).toList(),
     );
   }
@@ -47,6 +48,7 @@ class GatePassPdfService {
       challanNo: entry.challanNo,
       vehicleNo: entry.vehicleNo,
       lrNumber: entry.lrNumber,
+      countSheetNo: entry.countSheetNo,
       items: entry.items.map(_fromGateEntryItem).toList(),
     );
   }
@@ -60,6 +62,7 @@ class GatePassPdfService {
     required String vehicleNo,
     required String lrNumber,
     required List<GatePassItemInfo> items,
+    String? countSheetNo,
   }) async {
     final doc = _buildDocument(
       gatePassNo: gatePassNo,
@@ -70,6 +73,7 @@ class GatePassPdfService {
       vehicleNo: vehicleNo,
       lrNumber: lrNumber,
       items: items,
+      countSheetNo: countSheetNo,
     );
     await Printing.layoutPdf(
       name: _fileName(gatePassNo, isInward),
@@ -89,6 +93,7 @@ class GatePassPdfService {
     required String vehicleNo,
     required String lrNumber,
     required List<GatePassItemInfo> items,
+    String? countSheetNo,
   }) async {
     final doc = _buildDocument(
       gatePassNo: gatePassNo,
@@ -99,6 +104,7 @@ class GatePassPdfService {
       vehicleNo: vehicleNo,
       lrNumber: lrNumber,
       items: items,
+      countSheetNo: countSheetNo,
     );
     await Future.delayed(Duration.zero);
     final bytes = await doc.save();
@@ -150,6 +156,7 @@ class GatePassPdfService {
     required String vehicleNo,
     required String lrNumber,
     required List<GatePassItemInfo> items,
+    String? countSheetNo,
   }) {
     final doc = pw.Document();
 
@@ -174,6 +181,7 @@ class GatePassPdfService {
             isInward: isInward,
             gatePassNo: gatePassNo,
             date: dateText,
+            countSheetNo: countSheetNo,
             vendorName: vendorName,
             challanLine: challanLine,
             descriptionLines: descriptionLines,
@@ -190,6 +198,7 @@ class GatePassPdfService {
     required bool isInward,
     required String gatePassNo,
     required String date,
+    String? countSheetNo,
     required String vendorName,
     required String challanLine,
     required List<String> descriptionLines,
@@ -209,7 +218,8 @@ class GatePassPdfService {
           crossAxisAlignment: pw.CrossAxisAlignment.start,
           children: [
             _titleBar(title),
-            _gatePassNoRow(gatePassNo: gatePassNo, date: date),
+            _gatePassNoRow(
+                gatePassNo: gatePassNo, date: date, countSheetNo: countSheetNo),
             _addressAndMsRow(vendorName),
             _labeledBlock(
               label: 'D.C. / Inv. No.',
@@ -257,6 +267,7 @@ class GatePassPdfService {
   pw.Widget _gatePassNoRow({
     required String gatePassNo,
     required String date,
+    String? countSheetNo,
   }) {
     return pw.Container(
       decoration: const pw.BoxDecoration(
@@ -299,6 +310,13 @@ class GatePassPdfService {
                         style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
                       ),
                       pw.TextSpan(text: date),
+                      if (countSheetNo != null && countSheetNo.isNotEmpty) ...[
+                        pw.TextSpan(
+                          text: '     Count Sheet :- ',
+                          style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+                        ),
+                        pw.TextSpan(text: countSheetNo),
+                      ],
                     ],
                   ),
                 ),

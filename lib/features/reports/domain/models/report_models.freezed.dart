@@ -248,6 +248,7 @@ mixin _$GateEntryReportItem {
   String get vehicleNo => throw _privateConstructorUsedError;
   String get poNumber => throw _privateConstructorUsedError;
   String get status => throw _privateConstructorUsedError;
+  String? get countSheetNo => throw _privateConstructorUsedError;
 
   /// Serializes this GateEntryReportItem to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
@@ -279,7 +280,8 @@ abstract class $GateEntryReportItemCopyWith<$Res> {
       String transporter,
       String vehicleNo,
       String poNumber,
-      String status});
+      String status,
+      String? countSheetNo});
 }
 
 /// @nodoc
@@ -311,6 +313,7 @@ class _$GateEntryReportItemCopyWithImpl<$Res, $Val extends GateEntryReportItem>
     Object? vehicleNo = null,
     Object? poNumber = null,
     Object? status = null,
+    Object? countSheetNo = freezed,
   }) {
     return _then(_value.copyWith(
       gateEntryNo: null == gateEntryNo
@@ -369,6 +372,10 @@ class _$GateEntryReportItemCopyWithImpl<$Res, $Val extends GateEntryReportItem>
           ? _value.status
           : status // ignore: cast_nullable_to_non_nullable
               as String,
+      countSheetNo: freezed == countSheetNo
+          ? _value.countSheetNo
+          : countSheetNo // ignore: cast_nullable_to_non_nullable
+              as String?,
     ) as $Val);
   }
 }
@@ -395,7 +402,8 @@ abstract class _$$GateEntryReportItemImplCopyWith<$Res>
       String transporter,
       String vehicleNo,
       String poNumber,
-      String status});
+      String status,
+      String? countSheetNo});
 }
 
 /// @nodoc
@@ -425,6 +433,7 @@ class __$$GateEntryReportItemImplCopyWithImpl<$Res>
     Object? vehicleNo = null,
     Object? poNumber = null,
     Object? status = null,
+    Object? countSheetNo = freezed,
   }) {
     return _then(_$GateEntryReportItemImpl(
       gateEntryNo: null == gateEntryNo
@@ -483,6 +492,10 @@ class __$$GateEntryReportItemImplCopyWithImpl<$Res>
           ? _value.status
           : status // ignore: cast_nullable_to_non_nullable
               as String,
+      countSheetNo: freezed == countSheetNo
+          ? _value.countSheetNo
+          : countSheetNo // ignore: cast_nullable_to_non_nullable
+              as String?,
     ));
   }
 }
@@ -504,7 +517,8 @@ class _$GateEntryReportItemImpl implements _GateEntryReportItem {
       required this.transporter,
       required this.vehicleNo,
       required this.poNumber,
-      required this.status});
+      required this.status,
+      this.countSheetNo});
 
   factory _$GateEntryReportItemImpl.fromJson(Map<String, dynamic> json) =>
       _$$GateEntryReportItemImplFromJson(json);
@@ -537,10 +551,12 @@ class _$GateEntryReportItemImpl implements _GateEntryReportItem {
   final String poNumber;
   @override
   final String status;
+  @override
+  final String? countSheetNo;
 
   @override
   String toString() {
-    return 'GateEntryReportItem(gateEntryNo: $gateEntryNo, direction: $direction, challanNo: $challanNo, lrNo: $lrNo, date: $date, gateOutDate: $gateOutDate, material: $material, qty: $qty, vendor: $vendor, vendorCode: $vendorCode, transporter: $transporter, vehicleNo: $vehicleNo, poNumber: $poNumber, status: $status)';
+    return 'GateEntryReportItem(gateEntryNo: $gateEntryNo, direction: $direction, challanNo: $challanNo, lrNo: $lrNo, date: $date, gateOutDate: $gateOutDate, material: $material, qty: $qty, vendor: $vendor, vendorCode: $vendorCode, transporter: $transporter, vehicleNo: $vehicleNo, poNumber: $poNumber, status: $status, countSheetNo: $countSheetNo)';
   }
 
   @override
@@ -570,7 +586,9 @@ class _$GateEntryReportItemImpl implements _GateEntryReportItem {
                 other.vehicleNo == vehicleNo) &&
             (identical(other.poNumber, poNumber) ||
                 other.poNumber == poNumber) &&
-            (identical(other.status, status) || other.status == status));
+            (identical(other.status, status) || other.status == status) &&
+            (identical(other.countSheetNo, countSheetNo) ||
+                other.countSheetNo == countSheetNo));
   }
 
   @JsonKey(includeFromJson: false, includeToJson: false)
@@ -590,7 +608,8 @@ class _$GateEntryReportItemImpl implements _GateEntryReportItem {
       transporter,
       vehicleNo,
       poNumber,
-      status);
+      status,
+      countSheetNo);
 
   /// Create a copy of GateEntryReportItem
   /// with the given fields replaced by the non-null parameter values.
@@ -624,7 +643,8 @@ abstract class _GateEntryReportItem implements GateEntryReportItem {
       required final String transporter,
       required final String vehicleNo,
       required final String poNumber,
-      required final String status}) = _$GateEntryReportItemImpl;
+      required final String status,
+      final String? countSheetNo}) = _$GateEntryReportItemImpl;
 
   factory _GateEntryReportItem.fromJson(Map<String, dynamic> json) =
       _$GateEntryReportItemImpl.fromJson;
@@ -657,6 +677,8 @@ abstract class _GateEntryReportItem implements GateEntryReportItem {
   String get poNumber;
   @override
   String get status;
+  @override
+  String? get countSheetNo;
 
   /// Create a copy of GateEntryReportItem
   /// with the given fields replaced by the non-null parameter values.

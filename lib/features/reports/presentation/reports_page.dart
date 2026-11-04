@@ -1708,6 +1708,7 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
         child: DataTable(
           columns: const [
             DataColumn(label: Text('Gate Entry No')),
+            DataColumn(label: Text('Count Sheet')),
             DataColumn(label: Text('Direction')),
             DataColumn(label: Text('Invoice / Challan No')),
             DataColumn(label: Text('PO No')),
@@ -1724,6 +1725,7 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
               .map(
                 (e) => DataRow(cells: [
                   DataCell(Text(e.gateEntryNo)),
+                  DataCell(Text(e.countSheetNo ?? '-')),
                   DataCell(Text(e.direction)),
                   DataCell(Text(e.challanNo)),
                   DataCell(Text(e.poNumber)),

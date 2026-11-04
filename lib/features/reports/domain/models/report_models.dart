@@ -35,6 +35,8 @@ class GateEntryReportItem with _$GateEntryReportItem {
     required String vehicleNo,
     required String poNumber,
     required String status,
+    // The count sheet the entry was saved on; null before count sheets.
+    String? countSheetNo,
   }) = _GateEntryReportItem;
 
   factory GateEntryReportItem.fromJson(Map<String, dynamic> json) =>

@@ -7,6 +7,7 @@ import '../../../../core/network/dio_provider.dart';
 import '../../../../core/network/pagination_model.dart';
 import '../domain/gate_entry_repository.dart';
 import '../domain/models/attachment.dart';
+import '../domain/models/count_sheet.dart';
 import '../domain/models/deleted_gate_entry.dart';
 import '../../vendor/domain/models/vendor_po_material.dart';
 import '../domain/models/gate_entry.dart';
@@ -64,6 +65,7 @@ class GateEntryRepositoryImpl implements GateEntryRepository {
       gateOutBy: dto.gateOutBy,
       noOfLineItems: dto.noOfLineItems,
       remark: dto.remark,
+      countSheetNo: dto.countSheetNo,
     );
   }
 
@@ -370,6 +372,101 @@ class GateEntryRepositoryImpl implements GateEntryRepository {
           totalPages: intOf('totalPages', entries.isEmpty ? 0 : 1),
           total: intOf('total', entries.length),
         ),
+      );
+    } catch (e) {
+      return ApiResponse(
+        success: false,
+        message: e.toString().replaceFirst('Exception: ', ''),
+      );
+    }
+  }
+
+  @override
+  Future<ReservedCountSheet?> reserveCountSheet() async {
+    try {
+      final response =
+          await _apiClient.postRaw('/gate-entries/count-sheets/reserve');
+      return response['success'] == true
+          ? ReservedCountSheet.tryParse(response['data'])
+          : null;
+    } catch (_) {
+      // Non-fatal: the form still saves, and the server numbers the save.
+      return null;
+    }
+  }
+
+  @override
+  Future<ApiResponse<CountSheetPage>> getCountSheets({
+    String? search,
+    int page = 1,
+    int limit = 25,
+  }) async {
+    try {
+      final response = await _apiClient.getRaw(
+        '/gate-entries/count-sheets',
+        queryParameters: {
+          if (search != null && search.trim().isNotEmpty) 'q': search.trim(),
+          'page': '$page',
+          'limit': '$limit',
+        },
+      );
+      final data = response['data'];
+      final pagination = response['pagination'];
+      final sheets = data is List
+          ? data
+              .whereType<Map<String, dynamic>>()
+              .map(CountSheetSummary.fromJson)
+              .where((s) => s.countSheetNo.isNotEmpty)
+              .toList()
+          : <CountSheetSummary>[];
+      int intOf(String key, int fallback) =>
+          pagination is Map && pagination[key] is num
+              ? (pagination[key] as num).toInt()
+              : fallback;
+      return ApiResponse(
+        success: true,
+        message: response['message']?.toString() ?? '',
+        data: CountSheetPage(
+          sheets: sheets,
+          page: intOf('page', page),
+          totalPages: intOf('totalPages', sheets.isEmpty ? 0 : 1),
+          total: intOf('total', sheets.length),
+        ),
+      );
+    } catch (e) {
+      return ApiResponse(
+        success: false,
+        message: e.toString().replaceFirst('Exception: ', ''),
+      );
+    }
+  }
+
+  @override
+  Future<ApiResponse<List<GateEntry>>> getCountSheetEntries(
+      String countSheetNo) async {
+    try {
+      final response = await _apiClient.getRaw(
+        '/gate-entries',
+        queryParameters: {
+          'countSheet': countSheetNo,
+          'limit': '500',
+          'sortBy': 'created_at',
+          'sortOrder': 'asc',
+          // The summary cards are not shown on this screen.
+          'includeSummary': '0',
+        },
+      );
+      final data = response['data'];
+      final entries = data is List
+          ? data
+              .whereType<Map<String, dynamic>>()
+              .map((json) => _mapDtoToDomain(GateEntryResponse.fromJson(json)))
+              .toList()
+          : <GateEntry>[];
+      return ApiResponse(
+        success: response['success'] == true,
+        message: response['message']?.toString() ?? '',
+        data: entries,
       );
     } catch (e) {
       return ApiResponse(

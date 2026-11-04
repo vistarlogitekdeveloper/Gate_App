@@ -32,6 +32,7 @@ _$GateEntryImpl _$$GateEntryImplFromJson(Map<String, dynamic> json) =>
       createdBy: json['createdBy'] as String?,
       noOfLineItems: (json['noOfLineItems'] as num?)?.toInt(),
       remark: json['remark'] as String?,
+      countSheetNo: json['countSheetNo'] as String?,
     );
 
 Map<String, dynamic> _$$GateEntryImplToJson(_$GateEntryImpl instance) =>
@@ -54,6 +55,7 @@ Map<String, dynamic> _$$GateEntryImplToJson(_$GateEntryImpl instance) =>
       'createdBy': instance.createdBy,
       'noOfLineItems': instance.noOfLineItems,
       'remark': instance.remark,
+      'countSheetNo': instance.countSheetNo,
     };
 
 const _$GateMovementEnumMap = {

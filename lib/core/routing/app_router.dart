@@ -8,6 +8,7 @@ import '../../features/auth/presentation/login_page.dart';
 import '../../features/dashboard/presentation/dashboard_page.dart';
 import '../../features/dashboard/presentation/controllers/dashboard_controller.dart';
 import '../../features/warehouse/presentation/controllers/warehouse_providers.dart';
+import '../../features/gate_entry/presentation/count_sheets_page.dart';
 import '../../features/gate_entry/presentation/deleted_gate_entries_page.dart';
 import '../../features/gate_entry/presentation/gate_entry_page.dart';
 import '../../features/reconciliation/presentation/reco_page.dart';
@@ -107,6 +108,9 @@ final routerProvider = Provider<GoRouter>((ref) {
                 case 5:
                   context.go('/app/deleted-gate-entries');
                   break;
+                case 6:
+                  context.go('/app/count-sheets');
+                  break;
               }
             },
             child: child,
@@ -134,6 +138,10 @@ final routerProvider = Provider<GoRouter>((ref) {
             builder: (context, state) => const VendorMasterPage(),
           ),
           GoRoute(
+            path: '/app/count-sheets',
+            builder: (context, state) => const CountSheetsPage(),
+          ),
+          GoRoute(
             path: '/app/deleted-gate-entries',
             builder: (context, state) => const DeletedGateEntriesPage(),
           ),
@@ -149,6 +157,7 @@ int _indexFromLocation(String location) {
   if (location.startsWith('/app/reports')) return 3;
   if (location.startsWith('/app/vendor-master')) return 4;
   if (location.startsWith('/app/deleted-gate-entries')) return 5;
+  if (location.startsWith('/app/count-sheets')) return 6;
   return 0;
 }
 

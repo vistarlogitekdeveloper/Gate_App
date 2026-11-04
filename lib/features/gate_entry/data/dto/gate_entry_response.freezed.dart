@@ -33,6 +33,7 @@ mixin _$GateEntryResponse {
   String? get gateOutBy => throw _privateConstructorUsedError;
   int? get noOfLineItems => throw _privateConstructorUsedError;
   String? get remark => throw _privateConstructorUsedError;
+  String? get countSheetNo => throw _privateConstructorUsedError;
 
   /// Create a copy of GateEntryResponse
   /// with the given fields replaced by the non-null parameter values.
@@ -64,7 +65,8 @@ abstract class $GateEntryResponseCopyWith<$Res> {
       String? gateOutTimestamp,
       String? gateOutBy,
       int? noOfLineItems,
-      String? remark});
+      String? remark,
+      String? countSheetNo});
 }
 
 /// @nodoc
@@ -99,6 +101,7 @@ class _$GateEntryResponseCopyWithImpl<$Res, $Val extends GateEntryResponse>
     Object? gateOutBy = freezed,
     Object? noOfLineItems = freezed,
     Object? remark = freezed,
+    Object? countSheetNo = freezed,
   }) {
     return _then(_value.copyWith(
       id: null == id
@@ -169,6 +172,10 @@ class _$GateEntryResponseCopyWithImpl<$Res, $Val extends GateEntryResponse>
           ? _value.remark
           : remark // ignore: cast_nullable_to_non_nullable
               as String?,
+      countSheetNo: freezed == countSheetNo
+          ? _value.countSheetNo
+          : countSheetNo // ignore: cast_nullable_to_non_nullable
+              as String?,
     ) as $Val);
   }
 }
@@ -198,7 +205,8 @@ abstract class _$$GateEntryResponseImplCopyWith<$Res>
       String? gateOutTimestamp,
       String? gateOutBy,
       int? noOfLineItems,
-      String? remark});
+      String? remark,
+      String? countSheetNo});
 }
 
 /// @nodoc
@@ -231,6 +239,7 @@ class __$$GateEntryResponseImplCopyWithImpl<$Res>
     Object? gateOutBy = freezed,
     Object? noOfLineItems = freezed,
     Object? remark = freezed,
+    Object? countSheetNo = freezed,
   }) {
     return _then(_$GateEntryResponseImpl(
       id: null == id
@@ -301,6 +310,10 @@ class __$$GateEntryResponseImplCopyWithImpl<$Res>
           ? _value.remark
           : remark // ignore: cast_nullable_to_non_nullable
               as String?,
+      countSheetNo: freezed == countSheetNo
+          ? _value.countSheetNo
+          : countSheetNo // ignore: cast_nullable_to_non_nullable
+              as String?,
     ));
   }
 }
@@ -325,7 +338,8 @@ class _$GateEntryResponseImpl implements _GateEntryResponse {
       this.gateOutTimestamp,
       this.gateOutBy,
       this.noOfLineItems,
-      this.remark})
+      this.remark,
+      this.countSheetNo})
       : _items = items;
 
   @override
@@ -371,10 +385,12 @@ class _$GateEntryResponseImpl implements _GateEntryResponse {
   final int? noOfLineItems;
   @override
   final String? remark;
+  @override
+  final String? countSheetNo;
 
   @override
   String toString() {
-    return 'GateEntryResponse(id: $id, gateEntryNo: $gateEntryNo, gateTimestamp: $gateTimestamp, gateMovement: $gateMovement, challanNo: $challanNo, lrNumber: $lrNumber, transporterName: $transporterName, vehicleNo: $vehicleNo, driverContactNo: $driverContactNo, vendorCode: $vendorCode, vendorName: $vendorName, status: $status, items: $items, gateOutTimestamp: $gateOutTimestamp, gateOutBy: $gateOutBy, noOfLineItems: $noOfLineItems, remark: $remark)';
+    return 'GateEntryResponse(id: $id, gateEntryNo: $gateEntryNo, gateTimestamp: $gateTimestamp, gateMovement: $gateMovement, challanNo: $challanNo, lrNumber: $lrNumber, transporterName: $transporterName, vehicleNo: $vehicleNo, driverContactNo: $driverContactNo, vendorCode: $vendorCode, vendorName: $vendorName, status: $status, items: $items, gateOutTimestamp: $gateOutTimestamp, gateOutBy: $gateOutBy, noOfLineItems: $noOfLineItems, remark: $remark, countSheetNo: $countSheetNo)';
   }
 
   @override
@@ -411,7 +427,9 @@ class _$GateEntryResponseImpl implements _GateEntryResponse {
                 other.gateOutBy == gateOutBy) &&
             (identical(other.noOfLineItems, noOfLineItems) ||
                 other.noOfLineItems == noOfLineItems) &&
-            (identical(other.remark, remark) || other.remark == remark));
+            (identical(other.remark, remark) || other.remark == remark) &&
+            (identical(other.countSheetNo, countSheetNo) ||
+                other.countSheetNo == countSheetNo));
   }
 
   @override
@@ -433,7 +451,8 @@ class _$GateEntryResponseImpl implements _GateEntryResponse {
       gateOutTimestamp,
       gateOutBy,
       noOfLineItems,
-      remark);
+      remark,
+      countSheetNo);
 
   /// Create a copy of GateEntryResponse
   /// with the given fields replaced by the non-null parameter values.
@@ -463,7 +482,8 @@ abstract class _GateEntryResponse implements GateEntryResponse {
       final String? gateOutTimestamp,
       final String? gateOutBy,
       final int? noOfLineItems,
-      final String? remark}) = _$GateEntryResponseImpl;
+      final String? remark,
+      final String? countSheetNo}) = _$GateEntryResponseImpl;
 
   @override
   String get id;
@@ -499,6 +519,8 @@ abstract class _GateEntryResponse implements GateEntryResponse {
   int? get noOfLineItems;
   @override
   String? get remark;
+  @override
+  String? get countSheetNo;
 
   /// Create a copy of GateEntryResponse
   /// with the given fields replaced by the non-null parameter values.
