@@ -26,6 +26,7 @@ class DeletedGateEntry {
   final DateTime? gateOutTimestamp;
   final String? reconciliationStatus;
   final String? matchedGrnNumber;
+  final String? countSheetNo;
   final int attachmentCount;
   final List<DeletedGateEntryItem> items;
 
@@ -52,6 +53,7 @@ class DeletedGateEntry {
     required this.gateOutTimestamp,
     required this.reconciliationStatus,
     required this.matchedGrnNumber,
+    this.countSheetNo,
     required this.attachmentCount,
     required this.items,
   });
@@ -81,6 +83,7 @@ class DeletedGateEntry {
       gateOutTimestamp: _date(json['gateOutTimestamp']),
       reconciliationStatus: _str(json['reconciliationStatus']),
       matchedGrnNumber: _str(json['matchedGrnNumber']),
+      countSheetNo: _str(json['countSheetNo']),
       attachmentCount: (json['attachmentCount'] as num?)?.toInt() ?? 0,
       items: rawItems is List
           ? rawItems

@@ -373,6 +373,7 @@ _SheetData _buildGateEntryExcelRows(List<GateEntryReportItem> data) {
   const sheetName = 'Sheet1';
   final headers = <String>[
     'Gate Entry No',
+    'Count Sheet',
     'Invoice/Challan Number',
     'Gate In Date',
     'Gate In Time',
@@ -391,6 +392,7 @@ _SheetData _buildGateEntryExcelRows(List<GateEntryReportItem> data) {
   for (final item in data) {
     rows.add([
       item.gateEntryNo,
+      item.countSheetNo ?? '',
       item.challanNo,
       _formatDate(item.date),
       _formatTime(item.date),
@@ -418,6 +420,7 @@ Future<Uint8List> _buildGateEntryPdfBytes(
       pageFormat: PdfPageFormat.a4.landscape,
       headers: const [
         'Gate Entry No',
+        'Count Sheet',
         'Invoice/Challan',
         'Gate In Date',
         'Gate In Time',
@@ -434,6 +437,7 @@ Future<Uint8List> _buildGateEntryPdfBytes(
       rows: data
           .map((item) => [
                 item.gateEntryNo,
+                item.countSheetNo ?? '',
                 item.challanNo,
                 _formatDate(item.date),
                 _formatTime(item.date),

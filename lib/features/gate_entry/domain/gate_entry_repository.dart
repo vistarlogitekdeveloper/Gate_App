@@ -2,6 +2,7 @@ import '../../../core/network/api_response.dart';
 import '../data/dto/create_gate_entry_request.dart';
 import '../data/dto/check_challan_uniqueness_response.dart';
 import 'models/attachment.dart';
+import 'models/count_sheet.dart';
 import 'models/deleted_gate_entry.dart';
 import 'models/gate_entry.dart';
 import 'models/gate_entry_list_response.dart';
@@ -47,6 +48,21 @@ abstract class GateEntryRepository {
     int page = 1,
     int limit = 25,
   });
+  /// The count sheet number for a freshly opened Create Gate Entry form:
+  /// this guard's own unused one, else the next. Null when it could not be
+  /// reserved (offline, older server) -- the save then takes one itself.
+  Future<ReservedCountSheet?> reserveCountSheet();
+
+  /// Count sheets that have gate entries, newest first.
+  Future<ApiResponse<CountSheetPage>> getCountSheets({
+    String? search,
+    int page = 1,
+    int limit = 25,
+  });
+
+  /// Every gate entry saved on one count sheet.
+  Future<ApiResponse<List<GateEntry>>> getCountSheetEntries(
+      String countSheetNo);
   Future<ApiResponse<void>> approveGateEntry(String id);
   Future<ApiResponse<void>> closeGateEntry(String id);
   Future<ApiResponse<List<AttachmentInfo>>> getAttachments(String id);

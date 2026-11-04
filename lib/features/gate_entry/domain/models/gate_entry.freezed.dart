@@ -38,6 +38,7 @@ mixin _$GateEntry {
   String? get createdBy => throw _privateConstructorUsedError;
   int? get noOfLineItems => throw _privateConstructorUsedError;
   String? get remark => throw _privateConstructorUsedError;
+  String? get countSheetNo => throw _privateConstructorUsedError;
 
   /// Serializes this GateEntry to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
@@ -72,7 +73,8 @@ abstract class $GateEntryCopyWith<$Res> {
       String? gateOutBy,
       String? createdBy,
       int? noOfLineItems,
-      String? remark});
+      String? remark,
+      String? countSheetNo});
 }
 
 /// @nodoc
@@ -108,6 +110,7 @@ class _$GateEntryCopyWithImpl<$Res, $Val extends GateEntry>
     Object? createdBy = freezed,
     Object? noOfLineItems = freezed,
     Object? remark = freezed,
+    Object? countSheetNo = freezed,
   }) {
     return _then(_value.copyWith(
       id: null == id
@@ -182,6 +185,10 @@ class _$GateEntryCopyWithImpl<$Res, $Val extends GateEntry>
           ? _value.remark
           : remark // ignore: cast_nullable_to_non_nullable
               as String?,
+      countSheetNo: freezed == countSheetNo
+          ? _value.countSheetNo
+          : countSheetNo // ignore: cast_nullable_to_non_nullable
+              as String?,
     ) as $Val);
   }
 }
@@ -212,7 +219,8 @@ abstract class _$$GateEntryImplCopyWith<$Res>
       String? gateOutBy,
       String? createdBy,
       int? noOfLineItems,
-      String? remark});
+      String? remark,
+      String? countSheetNo});
 }
 
 /// @nodoc
@@ -246,6 +254,7 @@ class __$$GateEntryImplCopyWithImpl<$Res>
     Object? createdBy = freezed,
     Object? noOfLineItems = freezed,
     Object? remark = freezed,
+    Object? countSheetNo = freezed,
   }) {
     return _then(_$GateEntryImpl(
       id: null == id
@@ -320,6 +329,10 @@ class __$$GateEntryImplCopyWithImpl<$Res>
           ? _value.remark
           : remark // ignore: cast_nullable_to_non_nullable
               as String?,
+      countSheetNo: freezed == countSheetNo
+          ? _value.countSheetNo
+          : countSheetNo // ignore: cast_nullable_to_non_nullable
+              as String?,
     ));
   }
 }
@@ -345,7 +358,8 @@ class _$GateEntryImpl implements _GateEntry {
       this.gateOutBy,
       this.createdBy,
       this.noOfLineItems,
-      this.remark})
+      this.remark,
+      this.countSheetNo})
       : _items = items;
 
   factory _$GateEntryImpl.fromJson(Map<String, dynamic> json) =>
@@ -397,10 +411,12 @@ class _$GateEntryImpl implements _GateEntry {
   final int? noOfLineItems;
   @override
   final String? remark;
+  @override
+  final String? countSheetNo;
 
   @override
   String toString() {
-    return 'GateEntry(id: $id, gateEntryNo: $gateEntryNo, gateMovement: $gateMovement, challanNo: $challanNo, lrNumber: $lrNumber, transporterName: $transporterName, vehicleNo: $vehicleNo, driverContactNo: $driverContactNo, vendorCode: $vendorCode, vendorName: $vendorName, items: $items, status: $status, gateTimestamp: $gateTimestamp, gateOutTimestamp: $gateOutTimestamp, gateOutBy: $gateOutBy, createdBy: $createdBy, noOfLineItems: $noOfLineItems, remark: $remark)';
+    return 'GateEntry(id: $id, gateEntryNo: $gateEntryNo, gateMovement: $gateMovement, challanNo: $challanNo, lrNumber: $lrNumber, transporterName: $transporterName, vehicleNo: $vehicleNo, driverContactNo: $driverContactNo, vendorCode: $vendorCode, vendorName: $vendorName, items: $items, status: $status, gateTimestamp: $gateTimestamp, gateOutTimestamp: $gateOutTimestamp, gateOutBy: $gateOutBy, createdBy: $createdBy, noOfLineItems: $noOfLineItems, remark: $remark, countSheetNo: $countSheetNo)';
   }
 
   @override
@@ -439,7 +455,9 @@ class _$GateEntryImpl implements _GateEntry {
                 other.createdBy == createdBy) &&
             (identical(other.noOfLineItems, noOfLineItems) ||
                 other.noOfLineItems == noOfLineItems) &&
-            (identical(other.remark, remark) || other.remark == remark));
+            (identical(other.remark, remark) || other.remark == remark) &&
+            (identical(other.countSheetNo, countSheetNo) ||
+                other.countSheetNo == countSheetNo));
   }
 
   @JsonKey(includeFromJson: false, includeToJson: false)
@@ -463,7 +481,8 @@ class _$GateEntryImpl implements _GateEntry {
       gateOutBy,
       createdBy,
       noOfLineItems,
-      remark);
+      remark,
+      countSheetNo);
 
   /// Create a copy of GateEntry
   /// with the given fields replaced by the non-null parameter values.
@@ -500,7 +519,8 @@ abstract class _GateEntry implements GateEntry {
       final String? gateOutBy,
       final String? createdBy,
       final int? noOfLineItems,
-      final String? remark}) = _$GateEntryImpl;
+      final String? remark,
+      final String? countSheetNo}) = _$GateEntryImpl;
 
   factory _GateEntry.fromJson(Map<String, dynamic> json) =
       _$GateEntryImpl.fromJson;
@@ -541,6 +561,8 @@ abstract class _GateEntry implements GateEntry {
   int? get noOfLineItems;
   @override
   String? get remark;
+  @override
+  String? get countSheetNo;
 
   /// Create a copy of GateEntry
   /// with the given fields replaced by the non-null parameter values.

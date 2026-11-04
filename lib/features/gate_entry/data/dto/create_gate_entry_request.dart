@@ -58,6 +58,7 @@ class CreateGateEntryRequest {
     this.noOfLineItems,
     this.remark,
     this.gateTimestamp,
+    this.countSheetId,
   });
 
   final String gateMovement;
@@ -80,6 +81,10 @@ class CreateGateEntryRequest {
   /// ISO-8601 string. Null means "now", which is what every normal entry
   /// sends. The server enforces the role and the allowed range.
   final String? gateTimestamp;
+
+  /// The count sheet reserved when the form opened. Every gate entry this
+  /// save creates gets its number; without it the server takes the next one.
+  final String? countSheetId;
 
   factory CreateGateEntryRequest.fromJson(Map<String, dynamic> json) {
     return CreateGateEntryRequest(
@@ -110,6 +115,8 @@ class CreateGateEntryRequest {
       remark: _readNullableString(json, const ['remark', 'remarks']),
       gateTimestamp:
           _readNullableString(json, const ['gateTimestamp', 'gate_timestamp']),
+      countSheetId:
+          _readNullableString(json, const ['countSheetId', 'count_sheet_id']),
     );
   }
 
@@ -125,6 +132,11 @@ class CreateGateEntryRequest {
     final backdatedAt = gateTimestamp;
     if (backdatedAt != null && backdatedAt.isNotEmpty) {
       map['gateTimestamp'] = backdatedAt;
+    }
+
+    final sheetId = countSheetId;
+    if (sheetId != null && sheetId.isNotEmpty) {
+      map['countSheetId'] = sheetId;
     }
 
     // The server accepts two mutually exclusive create shapes and rejects any

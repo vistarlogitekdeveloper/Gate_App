@@ -27,6 +27,7 @@ GateEntryResponse _$GateEntryResponseFromJson(Map<String, dynamic> json) =>
       gateOutBy: json['gateOutBy'] as String?,
       noOfLineItems: (json['noOfLineItems'] as num?)?.toInt(),
       remark: json['remark'] as String?,
+      countSheetNo: json['countSheetNo'] as String?,
     );
 
 Map<String, dynamic> _$GateEntryResponseToJson(GateEntryResponse instance) =>
@@ -48,4 +49,5 @@ Map<String, dynamic> _$GateEntryResponseToJson(GateEntryResponse instance) =>
       'gateOutBy': instance.gateOutBy,
       'noOfLineItems': instance.noOfLineItems,
       'remark': instance.remark,
+      'countSheetNo': instance.countSheetNo,
     };

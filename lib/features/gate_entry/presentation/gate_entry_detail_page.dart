@@ -11,6 +11,7 @@ import '../domain/models/gate_entry.dart';
 import '../domain/services/gate_pass_pdf_service.dart';
 import 'controllers/gate_entry_detail_controller.dart';
 import 'controllers/gate_entry_controller.dart';
+import 'count_sheets_page.dart';
 import 'gate_entry_form_page.dart';
 import 'widgets/delete_gate_entry_dialog.dart';
 
@@ -526,6 +527,12 @@ class _GateEntryDetailSecurityViewState extends ConsumerState<_GateEntryDetailSe
               title: 'Entry Information',
               icon: Icons.info_outline,
               children: [
+                if ((entry.countSheetNo ?? '').isNotEmpty)
+                  InkWell(
+                    onTap: () => openCountSheet(context, entry.countSheetNo!),
+                    child: _detailRow(context, 'Count Sheet No',
+                        '${entry.countSheetNo}  ·  view all invoices'),
+                  ),
                 if (entry.gateEntryNo != null)
                   _detailRow(
                       context, 'Gate Entry No', entry.gateEntryNo!),

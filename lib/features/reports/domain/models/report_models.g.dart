@@ -45,6 +45,7 @@ _$GateEntryReportItemImpl _$$GateEntryReportItemImplFromJson(
       vehicleNo: json['vehicleNo'] as String,
       poNumber: json['poNumber'] as String,
       status: json['status'] as String,
+      countSheetNo: json['countSheetNo'] as String?,
     );
 
 Map<String, dynamic> _$$GateEntryReportItemImplToJson(
@@ -64,6 +65,7 @@ Map<String, dynamic> _$$GateEntryReportItemImplToJson(
       'vehicleNo': instance.vehicleNo,
       'poNumber': instance.poNumber,
       'status': instance.status,
+      'countSheetNo': instance.countSheetNo,
     };
 
 _$GrnReconReportItemImpl _$$GrnReconReportItemImplFromJson(

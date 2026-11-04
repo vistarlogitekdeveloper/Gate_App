@@ -227,6 +227,7 @@ class ReportsRepository {
         vehicleNo: vehicleNo,
         poNumber: poNumber,
         status: status,
+        countSheetNo: (map['countSheetNo'] ?? map['count_sheet_no'])?.toString(),
       );
     }).toList();
   }
@@ -345,6 +346,7 @@ class ReportsRepository {
         vehicleNo: vehicleNo,
         poNumber: poNumber,
         status: status,
+        countSheetNo: (map['countSheetNo'] ?? map['count_sheet_no'])?.toString(),
       );
     }).toList();
 

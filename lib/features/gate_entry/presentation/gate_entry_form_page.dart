@@ -18,6 +18,7 @@ import '../../../core/ui/responsive.dart';
 import '../../../core/ui/widgets/loading_overlay.dart';
 import '../../../core/ui/widgets/logout_action.dart';
 import '../data/gate_entry_repository_impl.dart';
+import '../domain/models/count_sheet.dart';
 import '../domain/models/gate_entry.dart';
 import '../domain/models/vendor.dart';
 import '../../vendor/domain/models/vendor_po_material.dart';
@@ -180,6 +181,13 @@ class _GateEntryFormPageState extends ConsumerState<GateEntryFormPage> {
   /// "now", which is what every normal entry sends.
   DateTime? _backdatedAt;
 
+  // The count sheet number of this save, reserved when the form opens so the
+  // guard can write it on the paper sheet. Every invoice saved from this form
+  // gets it. Null while loading, or if it could not be reserved -- the server
+  // then numbers the save itself and the success message says which.
+  ReservedCountSheet? _countSheet;
+  bool _reservingCountSheet = false;
+
   bool _allowAlphaNumericChallan = false;
   bool _isScanning = false;
   Timer? _challanOnChangedDebounce;
@@ -273,6 +281,101 @@ class _GateEntryFormPageState extends ConsumerState<GateEntryFormPage> {
     }
 
     _vendorCodeCtrl.addListener(_onVendorCodeChangedForValidation);
+    if (widget.initialEntry == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _reserveCountSheet());
+    }
+  }
+
+  Future<void> _reserveCountSheet() async {
+    if (!mounted || _reservingCountSheet) return;
+    setState(() => _reservingCountSheet = true);
+    final sheet =
+        await ref.read(gateEntryRepositoryProvider).reserveCountSheet();
+    if (!mounted) return;
+    setState(() {
+      _reservingCountSheet = false;
+      _countSheet = sheet ?? _countSheet;
+    });
+  }
+
+  /// The count sheet number, at the top of the form. Creating: the number
+  /// reserved for this save. Editing: the number the entry was saved on.
+  Widget _buildCountSheetBanner() {
+    final theme = Theme.of(context);
+    final isEdit = widget.initialEntry != null;
+    final number =
+        isEdit ? widget.initialEntry!.countSheetNo : _countSheet?.countSheetNo;
+    if (isEdit && (number == null || number.isEmpty)) {
+      return const SizedBox.shrink();
+    }
+    final accent = theme.colorScheme.primary;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: accent.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: accent.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.fact_check_outlined, color: accent),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'COUNT SHEET NO.',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    letterSpacing: 1.1,
+                    fontWeight: FontWeight.w700,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                if (number != null && number.isNotEmpty)
+                  SelectableText(
+                    number,
+                    style: theme.textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      color: accent,
+                      letterSpacing: 1.5,
+                    ),
+                  )
+                else if (_reservingCountSheet)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 6),
+                    child: SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  )
+                else
+                  Text(
+                    'Assigned when you save',
+                    style: theme.textTheme.bodyMedium
+                        ?.copyWith(fontWeight: FontWeight.w600),
+                  ),
+                if (!isEdit)
+                  Text(
+                    'All invoices of this vehicle are saved on this count sheet.',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant),
+                  ),
+              ],
+            ),
+          ),
+          if (!isEdit && _countSheet == null && !_reservingCountSheet)
+            TextButton.icon(
+              onPressed: _reserveCountSheet,
+              icon: const Icon(Icons.refresh, size: 18),
+              label: const Text('Retry'),
+            ),
+        ],
+      ),
+    );
   }
 
   void _onVendorCodeChangedForValidation() {
@@ -1245,6 +1348,8 @@ class _GateEntryFormPageState extends ConsumerState<GateEntryFormPage> {
         'invoice_entries': invoiceEntries,
         'no_of_line_items': _noOfLineItemsCtrl.text.trim(),
         'remark': _remarkCtrl.text.trim(),
+        // The count sheet reserved when the form opened (create only).
+        if (!isEdit && _countSheet != null) 'count_sheet_id': _countSheet!.id,
       };
 
       // Omitted entirely unless an admin picked a date, so a normal entry is
@@ -1281,13 +1386,23 @@ class _GateEntryFormPageState extends ConsumerState<GateEntryFormPage> {
                 );
 
         if (!mounted) return;
+        // The number actually saved. It differs from the one shown only when
+        // that one was used meanwhile (e.g. from a second device).
+        final savedSheet = createdEntry?.countSheetNo;
+        final shownSheet = _countSheet?.countSheetNo;
+        final sheetNote = isEdit || savedSheet == null || savedSheet.isEmpty
+            ? ''
+            : (shownSheet != null && shownSheet != savedSheet)
+                ? ' Count Sheet No. $savedSheet ($shownSheet was already used).'
+                : ' Count Sheet No. $savedSheet.';
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(isEdit
                 ? 'Gate Entry successfully updated!'
-                : 'Gate Entry successfully created!'),
+                : 'Gate Entry successfully created!$sheetNote'),
             behavior: SnackBarBehavior.floating,
             backgroundColor: Colors.green,
+            duration: Duration(seconds: sheetNote.isEmpty ? 4 : 6),
           ),
         );
 
@@ -1323,6 +1438,7 @@ class _GateEntryFormPageState extends ConsumerState<GateEntryFormPage> {
               challanNo: createdEntry.challanNo,
               vehicleNo: createdEntry.vehicleNo,
               lrNumber: createdEntry.lrNumber,
+              countSheetNo: createdEntry.countSheetNo,
               items: items.isNotEmpty
                   ? items
                   : createdEntry.items
@@ -1750,6 +1866,9 @@ class _GateEntryFormPageState extends ConsumerState<GateEntryFormPage> {
                             ),
                       ),
                       const SizedBox(height: 8),
+
+                      // ── Count sheet number ───────────────────────────────
+                      _buildCountSheetBanner(),
 
                       // ── Section 1: Gate Information ──────────────────────
                       _buildSectionHeader(

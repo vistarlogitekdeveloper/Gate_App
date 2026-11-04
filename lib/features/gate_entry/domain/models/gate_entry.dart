@@ -27,6 +27,9 @@ class GateEntry with _$GateEntry {
     String? createdBy,
     int? noOfLineItems,
     String? remark,
+    // The count sheet this entry was saved on (one per vehicle save, shared
+    // by its invoices). Null for entries from before count sheets existed.
+    String? countSheetNo,
   }) = _GateEntry;
 
   factory GateEntry.fromJson(Map<String, dynamic> json) =>

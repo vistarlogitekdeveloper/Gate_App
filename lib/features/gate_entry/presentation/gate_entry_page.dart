@@ -18,6 +18,7 @@ import '../domain/models/gate_entry.dart';
 import '../domain/models/gate_entry_query.dart';
 import '../domain/models/gate_entry_summary.dart';
 import 'controllers/gate_entry_controller.dart';
+import 'count_sheets_page.dart';
 import 'gate_entry_detail_page.dart';
 import 'gate_entry_form_page.dart';
 
@@ -311,6 +312,20 @@ class _GateEntrySecurityViewState extends ConsumerState<_GateEntrySecurityView> 
                       label: const Text('Create Gate Entry'),
                     ),
             ),
+          // Count sheets: one per vehicle, with all of its invoices.
+          isMobile(context)
+              ? IconButton(
+                  tooltip: 'Count Sheets',
+                  icon: const Icon(Icons.fact_check_outlined),
+                  onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) => const CountSheetsPage())),
+                )
+              : TextButton.icon(
+                  onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) => const CountSheetsPage())),
+                  icon: const Icon(Icons.fact_check_outlined, size: 18),
+                  label: const Text('Count Sheets'),
+                ),
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: () => ref
@@ -806,6 +821,25 @@ class _GateEntrySecurityViewState extends ConsumerState<_GateEntrySecurityView> 
 
   // ─── Desktop Table ────────────────────────────────────────────────────────
 
+  /// The entry's count sheet; tapping it opens every invoice on that sheet
+  /// instead of this one entry.
+  DataCell _countSheetCell(BuildContext context, String? countSheetNo) {
+    if (countSheetNo == null || countSheetNo.isEmpty) {
+      return const DataCell(Text('-'));
+    }
+    return DataCell(
+      Text(
+        countSheetNo,
+        style: TextStyle(
+          fontWeight: FontWeight.w700,
+          color: Theme.of(context).colorScheme.primary,
+          decoration: TextDecoration.underline,
+        ),
+      ),
+      onTap: () => openCountSheet(context, countSheetNo),
+    );
+  }
+
   Widget _buildDesktopTable(List<GateEntry> entries, bool isTab) {
     return SizedBox(
       height: 560,
@@ -825,12 +859,13 @@ class _GateEntrySecurityViewState extends ConsumerState<_GateEntrySecurityView> 
           child: DataTable2(
             columnSpacing: isTab ? 10 : 14,
             horizontalMargin: isTab ? 16 : 24,
-            minWidth: 1280,
+            minWidth: 1400,
             headingRowHeight: 60,
             dataRowHeight: 68,
             showCheckboxColumn: false,
             columns: const [
               DataColumn2(label: Text('Direction'), size: ColumnSize.S),
+              DataColumn2(label: Text('Count Sheet'), size: ColumnSize.S),
               DataColumn2(label: Text('Challan No'), size: ColumnSize.M),
               DataColumn2(label: Text('LR Number'), size: ColumnSize.M),
               DataColumn2(label: Text('Material'), size: ColumnSize.S),
@@ -884,6 +919,7 @@ class _GateEntrySecurityViewState extends ConsumerState<_GateEntrySecurityView> 
                       ],
                     ),
                   ),
+                  _countSheetCell(context, entry.countSheetNo),
                   DataCell(
                     Text(
                       entry.challanNo,
@@ -1333,6 +1369,23 @@ class _MobileEntryCard extends StatelessWidget {
                           fontWeight: FontWeight.w600,
                         ),
                       ),
+                      if ((entry.countSheetNo ?? '').isNotEmpty)
+                        InkWell(
+                          onTap: () =>
+                              openCountSheet(context, entry.countSheetNo!),
+                          child: Padding(
+                            padding: const EdgeInsets.only(top: 2),
+                            child: Text(
+                              'Count Sheet ${entry.countSheetNo}',
+                              style: TextStyle(
+                                color: Theme.of(context).colorScheme.primary,
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w700,
+                                decoration: TextDecoration.underline,
+                              ),
+                            ),
+                          ),
+                        ),
                     ],
                   ),
                 ),
@@ -1577,6 +1630,20 @@ class _WarehouseGateEntryView extends ConsumerWidget {
       appBar: AppBar(
         title: Text(isManager ? 'Gate Entries' : 'Pending GRNs'),
         actions: [
+          // Count sheets: one per vehicle, with all of its invoices.
+          isMobile(context)
+              ? IconButton(
+                  tooltip: 'Count Sheets',
+                  icon: const Icon(Icons.fact_check_outlined),
+                  onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) => const CountSheetsPage())),
+                )
+              : TextButton.icon(
+                  onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) => const CountSheetsPage())),
+                  icon: const Icon(Icons.fact_check_outlined, size: 18),
+                  label: const Text('Count Sheets'),
+                ),
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: () => ref.refresh(warehouseGateEntriesProvider.future),

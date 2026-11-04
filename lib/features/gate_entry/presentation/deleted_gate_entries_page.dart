@@ -318,6 +318,7 @@ class _DeletedEntryDetailsDialog extends StatelessWidget {
     final qty = NumberFormat('#,##0.###');
 
     final rows = <(String, String?)>[
+      ('Count sheet', entry.countSheetNo),
       ('Direction', entry.gateDirection),
       ('Gate date & time', _fmt(entry.gateTimestamp)),
       ('Invoice / Challan', entry.challanNo),

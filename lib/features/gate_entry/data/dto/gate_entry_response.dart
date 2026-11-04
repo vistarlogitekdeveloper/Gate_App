@@ -25,6 +25,7 @@ class GateEntryResponse with _$GateEntryResponse {
     String? gateOutBy,
     int? noOfLineItems,
     String? remark,
+    String? countSheetNo,
   }) = _GateEntryResponse;
 
   factory GateEntryResponse.fromJson(Map<String, dynamic> json) {
@@ -90,6 +91,10 @@ class GateEntryResponse with _$GateEntryResponse {
       'remark': _readNullableString(
         json,
         const ['remark', 'remarks'],
+      ),
+      'countSheetNo': _readNullableString(
+        json,
+        const ['countSheetNo', 'count_sheet_no'],
       ),
       'items': _normalizeItems(json),
     };
