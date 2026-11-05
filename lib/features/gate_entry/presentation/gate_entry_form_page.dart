@@ -30,6 +30,7 @@ import '../domain/services/on_device_ocr.dart';
 import 'widgets/e_invoice_qr_scanner_page.dart';
 import 'widgets/scan_review_sheet.dart';
 import 'widgets/search_picker_dialog.dart';
+import 'count_sheet_print.dart';
 
 class _ChallanFieldState {
   _ChallanFieldState({
@@ -1462,6 +1463,15 @@ class _GateEntryFormPageState extends ConsumerState<GateEntryFormPage> {
               );
             }
           }
+        }
+
+        // Offer the count sheet (Receipt and Put Away Sheet) for the vehicle
+        // just saved; it can also be printed later from Count Sheets.
+        if (!isEdit &&
+            savedSheet != null &&
+            savedSheet.isNotEmpty &&
+            mounted) {
+          await offerCountSheetPrint(context, ref, savedSheet);
         }
 
         if (!mounted) return;
