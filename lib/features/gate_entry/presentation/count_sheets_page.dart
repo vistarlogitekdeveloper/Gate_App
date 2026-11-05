@@ -12,6 +12,7 @@ import '../../../core/ui/widgets/vistar_card.dart';
 import '../data/gate_entry_repository_impl.dart';
 import '../domain/models/count_sheet.dart';
 import '../domain/models/gate_entry.dart';
+import 'count_sheet_print.dart';
 import 'gate_entry_detail_page.dart';
 
 final _dateTime = DateFormat('dd MMM yyyy, hh:mm a');
@@ -189,6 +190,8 @@ class _CountSheetsPageState extends ConsumerState<CountSheetsPage> {
                   child: _CountSheetCard(
                     sheet: sheet,
                     onTap: () => openCountSheet(context, sheet.countSheetNo),
+                    onPrint: () =>
+                        printCountSheet(context, ref, sheet.countSheetNo),
                   ),
                 ),
               if ((result?.totalPages ?? 0) > 1)
@@ -211,10 +214,15 @@ class _CountSheetsPageState extends ConsumerState<CountSheetsPage> {
 }
 
 class _CountSheetCard extends StatelessWidget {
-  const _CountSheetCard({required this.sheet, required this.onTap});
+  const _CountSheetCard({
+    required this.sheet,
+    required this.onTap,
+    required this.onPrint,
+  });
 
   final CountSheetSummary sheet;
   final VoidCallback onTap;
+  final VoidCallback onPrint;
 
   @override
   Widget build(BuildContext context) {
@@ -242,6 +250,12 @@ class _CountSheetCard extends StatelessWidget {
               _Chip(
                 label: out ? 'Gated out' : 'Inside',
                 color: out ? Colors.grey.shade700 : Colors.green.shade700,
+              ),
+              IconButton(
+                tooltip: 'Print count sheet',
+                visualDensity: VisualDensity.compact,
+                icon: const Icon(Icons.print_outlined, size: 20),
+                onPressed: onPrint,
               ),
             ],
           ),
@@ -350,6 +364,39 @@ class _CountSheetDetailPageState extends ConsumerState<CountSheetDetailPage> {
       appBar: AppBar(
         title: Text('Count Sheet ${widget.countSheetNo}'),
         actions: [
+          // The Receipt and Put Away Sheet for this vehicle.
+          if (_entries.isNotEmpty) ...[
+            isMobile(context)
+                ? IconButton(
+                    tooltip: 'View count sheet',
+                    icon: const Icon(Icons.picture_as_pdf_outlined),
+                    onPressed: () => viewCountSheet(
+                        context, ref, widget.countSheetNo,
+                        entries: _entries),
+                  )
+                : TextButton.icon(
+                    onPressed: () => viewCountSheet(
+                        context, ref, widget.countSheetNo,
+                        entries: _entries),
+                    icon: const Icon(Icons.picture_as_pdf_outlined, size: 18),
+                    label: const Text('View'),
+                  ),
+            isMobile(context)
+                ? IconButton(
+                    tooltip: 'Print count sheet',
+                    icon: const Icon(Icons.print_outlined),
+                    onPressed: () => printCountSheet(
+                        context, ref, widget.countSheetNo,
+                        entries: _entries),
+                  )
+                : FilledButton.icon(
+                    onPressed: () => printCountSheet(
+                        context, ref, widget.countSheetNo,
+                        entries: _entries),
+                    icon: const Icon(Icons.print_outlined, size: 18),
+                    label: const Text('Print Count Sheet'),
+                  ),
+          ],
           IconButton(
             tooltip: 'Refresh',
             onPressed: _loading ? null : _load,
