@@ -70,7 +70,7 @@ void main() {
     await _maybeWrite('count-sheet-knorr.pdf', bytes);
   });
 
-  test('another organisation: no client logo, still builds', () async {
+  test('any organisation prints the Knorr-Bremse logo', () async {
     final bytes = await CountSheetPdfService.build(
       countSheetNo: '00007',
       entries: _entries().take(2).toList(),
@@ -79,6 +79,7 @@ void main() {
       printedBy: 'Gopal Guard',
     );
     expect(String.fromCharCodes(bytes.take(5)), '%PDF-');
+    expect(bytes.length, greaterThan(20000), reason: 'carries the logo images');
     await _maybeWrite('count-sheet-other-org.pdf', bytes);
   });
 

@@ -43,14 +43,6 @@ class CountSheetPdfService {
   /// there is always room to write in an extra line at the dock.
   static const _minRows = 10;
 
-  /// The client logo for an organisation, or null. Matched on the
-  /// organisation's code or name so a renamed code still finds it.
-  static String? _clientLogoFor(String orgCode, String orgName) {
-    final key = '$orgCode $orgName'.toLowerCase().replaceAll(RegExp('[^a-z]'), '');
-    if (key.contains('knorr') || key.contains('bremse')) return _knorrBremseLogo;
-    return null;
-  }
-
   /// The built-in Helvetica only covers Latin-1, and the app bundles no
   /// Unicode font. Data (vendor and user names typed anywhere) is mapped to
   /// it: typographic quotes and dashes to plain ones, anything else outside
@@ -94,7 +86,10 @@ class CountSheetPdfService {
     DateTime? printedAt,
   }) async {
     final vistar = await _asset(_vistarLogo);
-    final client = await _asset(_clientLogoFor(orgCode, orgName));
+    // The sheet is Knorr-Bremse's Receipt And Put Away Sheet: it always
+    // carries their logo. (It used to depend on the organisation's code or
+    // name, which in production do not mention Knorr-Bremse.)
+    final client = await _asset(_knorrBremseLogo);
     final at = (printedAt ?? DateTime.now()).toLocal();
     countSheetNo = _safe(countSheetNo);
     printedBy = _safe(printedBy);
