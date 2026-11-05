@@ -21,6 +21,9 @@ import '../../../core/ui/widgets/skeleton_loader.dart';
 import '../../../core/ui/widgets/stat_card.dart';
 import '../../../core/ui/widgets/theme_toggle_button.dart';
 import '../../sap/presentation/widgets/grn_import_card.dart';
+import '../../gate_entry/presentation/controllers/gate_entry_controller.dart';
+import '../../gate_entry/presentation/gate_entry_detail_page.dart';
+import '../../../core/ui/widgets/progress_dialog.dart';
 
 // --- Warehouse imports for Exec/Manager dashboards ---
 import '../../warehouse/presentation/controllers/warehouse_providers.dart';
@@ -999,33 +1002,240 @@ class _KpiSection extends StatelessWidget {
 
 /// Prominent red alert listing vehicles that were gated in but not gated out
 /// past the threshold (default 2h). Shown at the top of the security
-/// dashboard so security can chase them down.
-class _OverdueGateOutAlert extends StatelessWidget {
+/// dashboard so security can chase them down -- and record the gate out
+/// straight from here once the vehicle has left.
+class _OverdueGateOutAlert extends ConsumerStatefulWidget {
   const _OverdueGateOutAlert({required this.metrics});
 
   final DashboardMetrics metrics;
 
   @override
+  ConsumerState<_OverdueGateOutAlert> createState() =>
+      _OverdueGateOutAlertState();
+}
+
+class _OverdueGateOutAlertState extends ConsumerState<_OverdueGateOutAlert> {
+  static const _errorColor = Color(0xFFD32F2F);
+  // Show at most a handful inline; the rest behind "Show all".
+  static const _maxVisible = 6;
+
+  bool _showAll = false;
+  // Gated out from here -- hidden at once, before the dashboard reloads.
+  final Set<String> _gatedOut = {};
+
+  bool get _canGateOut {
+    final session = ref.read(sessionControllerProvider);
+    if (session is! Authenticated) return false;
+    final role = session.role;
+    return role == UserRole.gateSecurity ||
+        role == UserRole.warehouseExecutive ||
+        role.isAdminOrWarehouseManager;
+  }
+
+  Future<void> _gateOut(OverdueGateOut v) async {
+    final vehicle = v.vehicleNo.isEmpty ? '(no vehicle no)' : v.vehicleNo;
+    final remarksController = TextEditingController();
+    final proceed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        icon: const Icon(Icons.logout_rounded, color: _errorColor, size: 32),
+        title: Text('Gate Out $vehicle?'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (v.gateEntryNo.isNotEmpty || v.vendorName.isNotEmpty)
+                Text(
+                  [
+                    if (v.gateEntryNo.isNotEmpty) v.gateEntryNo,
+                    if (v.vendorName.isNotEmpty) v.vendorName,
+                  ].join(' · '),
+                  style: TextStyle(
+                      color: Theme.of(ctx).colorScheme.onSurfaceVariant),
+                ),
+              const SizedBox(height: 10),
+              Text(
+                'Vehicle has been inside for ${v.durationLabel}.',
+                style: const TextStyle(
+                    color: _errorColor, fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                'Record the gate out only once the vehicle has actually left '
+                'the gate. If it is leaving without unloading, say so in the '
+                'remarks.',
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: remarksController,
+                decoration: const InputDecoration(
+                  labelText: 'Remarks (Optional)',
+                  hintText: 'e.g. Vehicle exited after unloading',
+                  border: OutlineInputBorder(),
+                ),
+                maxLines: 2,
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton.icon(
+            style: FilledButton.styleFrom(backgroundColor: _errorColor),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            icon: const Icon(Icons.logout_rounded, size: 18),
+            label: const Text('Confirm Gate Out'),
+          ),
+        ],
+      ),
+    );
+    final remarks = remarksController.text.trim();
+    remarksController.dispose();
+    if (proceed != true || !mounted) return;
+
+    final controller = ref.read(gateEntryControllerProvider.notifier);
+    final ok = await runWithProgressDialog(
+      context,
+      () => controller.gateOutEntry(v.id, remarks: remarks),
+      label: 'Recording gate out...',
+    );
+    if (!mounted) return;
+    if (ok) {
+      setState(() => _gatedOut.add(v.id));
+      ref.invalidate(dashboardControllerProvider);
+    }
+    final error = ref.read(gateEntryControllerProvider).error;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      behavior: SnackBarBehavior.floating,
+      backgroundColor: ok ? Colors.green : Colors.redAccent,
+      content: Text(ok
+          ? 'Gate out recorded for $vehicle'
+          : (error != null && error.isNotEmpty
+              ? error
+              : 'Gate out failed for $vehicle')),
+    ));
+  }
+
+  void _openEntry(OverdueGateOut v) {
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => GateEntryDetailPage(entryId: v.id),
+    ));
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final items = metrics.overdueGateOut;
+    final metrics = widget.metrics;
+    final items = metrics.overdueGateOut
+        .where((v) => !_gatedOut.contains(v.id))
+        .toList();
     if (items.isEmpty) return const SizedBox.shrink();
 
     final thresholdHours =
         (metrics.overdueGateOutThresholdMinutes / 60).toStringAsFixed(
       metrics.overdueGateOutThresholdMinutes % 60 == 0 ? 0 : 1,
     );
-    const errorColor = Color(0xFFD32F2F);
-    // Show at most a handful inline; summarise the rest.
-    const maxVisible = 6;
-    final visible = items.take(maxVisible).toList();
+    final visible = _showAll ? items : items.take(_maxVisible).toList();
     final remaining = items.length - visible.length;
+    final canGateOut = _canGateOut;
+    final narrow = isMobile(context);
+
+    Widget durationChip(OverdueGateOut v) => Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          decoration: BoxDecoration(
+            color: _errorColor.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Text(
+            'Inside ${v.durationLabel}',
+            style: const TextStyle(
+              color: _errorColor,
+              fontWeight: FontWeight.w600,
+              fontSize: 12,
+            ),
+          ),
+        );
+
+    Widget gateOutButton(OverdueGateOut v) => OutlinedButton.icon(
+          style: OutlinedButton.styleFrom(
+            foregroundColor: _errorColor,
+            side: BorderSide(color: _errorColor.withValues(alpha: 0.6)),
+            visualDensity: VisualDensity.compact,
+          ),
+          onPressed: () => _gateOut(v),
+          icon: const Icon(Icons.logout_rounded, size: 18),
+          label: const Text('Gate Out'),
+        );
+
+    Widget row(OverdueGateOut v) {
+      final hasId = v.id.isNotEmpty;
+      return InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: hasId ? () => _openEntry(v) : null,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+          child: Row(
+            children: [
+              const Icon(Icons.local_shipping_outlined,
+                  size: 18, color: _errorColor),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      v.vehicleNo.isEmpty ? '(no vehicle no)' : v.vehicleNo,
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    if (v.gateEntryNo.isNotEmpty || v.vendorName.isNotEmpty)
+                      Text(
+                        [
+                          if (v.gateEntryNo.isNotEmpty) v.gateEntryNo,
+                          if (v.vendorName.isNotEmpty) v.vendorName,
+                        ].join(' · '),
+                        maxLines: narrow ? 2 : 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context)
+                            .textTheme
+                            .bodySmall
+                            ?.copyWith(color: Colors.grey.shade600),
+                      ),
+                    if (narrow) ...[
+                      const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          durationChip(v),
+                          const Spacer(),
+                          if (canGateOut && hasId) gateOutButton(v),
+                        ],
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              if (!narrow) ...[
+                const SizedBox(width: 10),
+                durationChip(v),
+              ],
+              if (!narrow && canGateOut && hasId) ...[
+                const SizedBox(width: 10),
+                gateOutButton(v),
+              ],
+            ],
+          ),
+        ),
+      );
+    }
 
     return Card(
       elevation: 0,
-      color: errorColor.withValues(alpha: 0.06),
+      color: _errorColor.withValues(alpha: 0.06),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: errorColor.withValues(alpha: 0.4)),
+        side: BorderSide(color: _errorColor.withValues(alpha: 0.4)),
       ),
       child: Padding(
         padding: const EdgeInsets.all(20),
@@ -1035,7 +1245,7 @@ class _OverdueGateOutAlert extends StatelessWidget {
             Row(
               children: [
                 const Icon(Icons.warning_amber_rounded,
-                    color: errorColor, size: 24),
+                    color: _errorColor, size: 24),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
@@ -1043,71 +1253,36 @@ class _OverdueGateOutAlert extends StatelessWidget {
                     'not gated out within ${thresholdHours}h',
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
                           fontWeight: FontWeight.bold,
-                          color: errorColor,
+                          color: _errorColor,
                         ),
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 14),
-            ...visible.map((v) => Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 6),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.local_shipping_outlined,
-                          size: 18, color: errorColor),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              v.vehicleNo.isEmpty ? '(no vehicle no)' : v.vehicleNo,
-                              style: const TextStyle(
-                                  fontWeight: FontWeight.w600),
-                            ),
-                            if (v.gateEntryNo.isNotEmpty || v.vendorName.isNotEmpty)
-                              Text(
-                                [
-                                  if (v.gateEntryNo.isNotEmpty) v.gateEntryNo,
-                                  if (v.vendorName.isNotEmpty) v.vendorName,
-                                ].join(' · '),
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .bodySmall
-                                    ?.copyWith(color: Colors.grey.shade600),
-                              ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: errorColor.withValues(alpha: 0.12),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(
-                          'Inside ${v.durationLabel}',
-                          style: const TextStyle(
-                            color: errorColor,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                )),
-            if (remaining > 0) ...[
-              const SizedBox(height: 6),
+            if (canGateOut) ...[
+              const SizedBox(height: 4),
               Text(
-                '+ $remaining more',
+                'Tap Gate Out once a vehicle has left; tap a row to open its '
+                'gate entry.',
                 style: Theme.of(context)
                     .textTheme
                     .bodySmall
-                    ?.copyWith(color: errorColor, fontWeight: FontWeight.w600),
+                    ?.copyWith(color: Colors.grey.shade700),
+              ),
+            ],
+            const SizedBox(height: 10),
+            ...visible.map(row),
+            if (items.length > _maxVisible) ...[
+              const SizedBox(height: 4),
+              TextButton.icon(
+                style: TextButton.styleFrom(foregroundColor: _errorColor),
+                onPressed: () => setState(() => _showAll = !_showAll),
+                icon: Icon(_showAll
+                    ? Icons.expand_less_rounded
+                    : Icons.expand_more_rounded),
+                label: Text(_showAll
+                    ? 'Show less'
+                    : 'Show all ${items.length} (+ $remaining more)'),
               ),
             ],
           ],

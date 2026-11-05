@@ -175,6 +175,7 @@ class DailyActivity {
 
 class OverdueGateOut {
   const OverdueGateOut({
+    this.id = '',
     required this.gateEntryNo,
     required this.vehicleNo,
     required this.vendorName,
@@ -183,6 +184,8 @@ class OverdueGateOut {
     this.gateTimestamp,
   });
 
+  /// The gate entry's id -- what recording its gate out needs.
+  final String id;
   final String gateEntryNo;
   final String vehicleNo;
   final String vendorName;
@@ -201,6 +204,7 @@ class OverdueGateOut {
   factory OverdueGateOut.fromJson(Map<String, dynamic> json) {
     String str(dynamic v) => v == null ? '' : v.toString();
     return OverdueGateOut(
+      id: str(json['id']),
       gateEntryNo: str(json['gateEntryNo']),
       vehicleNo: str(json['vehicleNo']),
       vendorName: str(json['vendorName']),
