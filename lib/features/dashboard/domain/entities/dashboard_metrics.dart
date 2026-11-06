@@ -176,6 +176,7 @@ class DailyActivity {
 class OverdueGateOut {
   const OverdueGateOut({
     this.id = '',
+    this.countSheetNo,
     required this.gateEntryNo,
     required this.vehicleNo,
     required this.vendorName,
@@ -186,6 +187,8 @@ class OverdueGateOut {
 
   /// The gate entry's id -- what recording its gate out needs.
   final String id;
+  /// The count sheet (= vehicle) the entry is on; null for older entries.
+  final String? countSheetNo;
   final String gateEntryNo;
   final String vehicleNo;
   final String vendorName;
@@ -205,6 +208,9 @@ class OverdueGateOut {
     String str(dynamic v) => v == null ? '' : v.toString();
     return OverdueGateOut(
       id: str(json['id']),
+      countSheetNo: str(json['countSheetNo']).isEmpty
+          ? null
+          : str(json['countSheetNo']),
       gateEntryNo: str(json['gateEntryNo']),
       vehicleNo: str(json['vehicleNo']),
       vendorName: str(json['vendorName']),

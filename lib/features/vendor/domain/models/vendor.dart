@@ -147,17 +147,35 @@ class VendorListQuery {
   static const Object _sentinel = Object();
 }
 
+/// One purchase order of a vendor and the material on it, as entered in
+/// Add / Edit Vendor.
+class VendorPoRow {
+  final String poNumber;
+  final String? materialCode;
+
+  const VendorPoRow({required this.poNumber, this.materialCode});
+
+  Map<String, dynamic> toJson() => {
+        'poNumber': poNumber,
+        if (materialCode != null && materialCode!.isNotEmpty)
+          'materialCode': materialCode,
+      };
+}
+
 class VendorWriteRequest {
   final String? vendorCode;
   final String? vendorName;
   final VendorType? vendorType;
   final bool? isActive;
+  /// When set, REPLACES the vendor's purchase orders / materials.
+  final List<VendorPoRow>? purchaseOrders;
 
   const VendorWriteRequest({
     this.vendorCode,
     this.vendorName,
     this.vendorType,
     this.isActive,
+    this.purchaseOrders,
   });
 
   Map<String, dynamic> toJson() {
@@ -166,6 +184,8 @@ class VendorWriteRequest {
       if (vendorName != null) 'vendorName': vendorName,
       if (vendorType != null) 'vendorType': vendorType!.apiValue,
       if (isActive != null) 'isActive': isActive,
+      if (purchaseOrders != null)
+        'purchaseOrders': purchaseOrders!.map((r) => r.toJson()).toList(),
     };
   }
 }

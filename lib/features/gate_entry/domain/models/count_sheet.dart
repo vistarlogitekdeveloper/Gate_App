@@ -27,6 +27,8 @@ class CountSheetSummary {
   final DateTime? gateOutTimestamp;
   final int entryCount;
   final int gatedOutCount;
+  /// Inward invoices of this sheet still waiting for their gate out.
+  final int pendingGateOutCount;
   final int closedCount;
   final int itemCount;
   final double totalQuantity;
@@ -43,6 +45,7 @@ class CountSheetSummary {
     required this.gateOutTimestamp,
     required this.entryCount,
     required this.gatedOutCount,
+    this.pendingGateOutCount = 0,
     required this.closedCount,
     required this.itemCount,
     required this.totalQuantity,
@@ -56,6 +59,10 @@ class CountSheetSummary {
 
   /// Every vehicle of this sheet has gone out again.
   bool get allGatedOut => entryCount > 0 && gatedOutCount >= entryCount;
+
+  /// The vehicle is still inside: it can be gated out (all of the sheet's
+  /// invoices together).
+  bool get canGateOut => pendingGateOutCount > 0;
 
   factory CountSheetSummary.fromJson(Map<String, dynamic> json) {
     String? text(String key) {
@@ -77,6 +84,13 @@ class CountSheetSummary {
       gateOutTimestamp: date('gateOutTimestamp'),
       entryCount: count('entryCount'),
       gatedOutCount: count('gatedOutCount'),
+      // Older servers do not send it: an inward sheet not fully gated out
+      // still waits.
+      pendingGateOutCount: json.containsKey('pendingGateOutCount')
+          ? count('pendingGateOutCount')
+          : ((text('gateDirection') ?? 'Gate In') == 'Gate Out'
+              ? 0
+              : (count('entryCount') - count('gatedOutCount')).clamp(0, 1 << 30)),
       closedCount: count('closedCount'),
       itemCount: count('itemCount'),
       totalQuantity: (json['totalQuantity'] as num?)?.toDouble() ?? 0,

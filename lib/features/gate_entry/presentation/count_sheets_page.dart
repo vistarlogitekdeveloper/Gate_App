@@ -14,6 +14,7 @@ import '../domain/models/count_sheet.dart';
 import '../domain/models/gate_entry.dart';
 import 'count_sheet_print.dart';
 import 'gate_entry_detail_page.dart';
+import 'count_sheet_gate_out.dart';
 
 final _dateTime = DateFormat('dd MMM yyyy, hh:mm a');
 String _fmt(DateTime? at) => at == null ? '—' : _dateTime.format(at.toLocal());
@@ -192,6 +193,26 @@ class _CountSheetsPageState extends ConsumerState<CountSheetsPage> {
                     onTap: () => openCountSheet(context, sheet.countSheetNo),
                     onPrint: () =>
                         printCountSheet(context, ref, sheet.countSheetNo),
+                    // The vehicle is still inside: gate out every invoice of
+                    // the sheet together.
+                    onGateOut: sheet.canGateOut && canRecordGateOut(ref)
+                        ? () async {
+                            final done = await confirmAndGateOutCountSheet(
+                              context,
+                              ref,
+                              countSheetNo: sheet.countSheetNo,
+                              vehicleNo: sheet.vehicleNos,
+                              invoiceCount: sheet.pendingGateOutCount,
+                              vendors: sheet.vendorNames,
+                              minutesInside: sheet.gateTimestamp == null
+                                  ? null
+                                  : DateTime.now()
+                                      .difference(sheet.gateTimestamp!)
+                                      .inMinutes,
+                            );
+                            if (done && mounted) _load();
+                          }
+                        : null,
                   ),
                 ),
               if ((result?.totalPages ?? 0) > 1)
@@ -218,11 +239,13 @@ class _CountSheetCard extends StatelessWidget {
     required this.sheet,
     required this.onTap,
     required this.onPrint,
+    this.onGateOut,
   });
 
   final CountSheetSummary sheet;
   final VoidCallback onTap;
   final VoidCallback onPrint;
+  final VoidCallback? onGateOut;
 
   @override
   Widget build(BuildContext context) {
@@ -298,6 +321,13 @@ class _CountSheetCard extends StatelessWidget {
                   ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
             ),
           ],
+          if (onGateOut != null) ...[
+            const SizedBox(height: 10),
+            Align(
+              alignment: Alignment.centerRight,
+              child: _GateOutVehicleButton(onPressed: onGateOut!),
+            ),
+          ],
         ],
       ),
     );
@@ -346,6 +376,33 @@ class _CountSheetDetailPageState extends ConsumerState<CountSheetDetailPage> {
             : 'Could not load this count sheet.';
       }
     });
+  }
+
+  /// Inward invoices of this sheet still waiting for their gate out.
+  List<GateEntry> get _inside => _entries
+      .where((e) =>
+          e.gateMovement == GateMovement.inMovement &&
+          e.gateOutTimestamp == null)
+      .toList();
+
+  Future<void> _gateOutVehicle() async {
+    final inside = _inside;
+    if (inside.isEmpty) return;
+    final gateIn = inside
+        .map((e) => e.gateTimestamp)
+        .whereType<DateTime>()
+        .fold<DateTime?>(null, (a, b) => a == null || b.isBefore(a) ? b : a);
+    final done = await confirmAndGateOutCountSheet(
+      context,
+      ref,
+      countSheetNo: widget.countSheetNo,
+      vehicleNo: _distinct(inside.map((e) => e.vehicleNo)),
+      invoiceCount: inside.length,
+      vendors: _distinct(inside.map((e) => e.vendorName)),
+      minutesInside:
+          gateIn == null ? null : DateTime.now().difference(gateIn).inMinutes,
+    );
+    if (done && mounted) _load();
   }
 
   Future<void> _openEntry(GateEntry entry) async {
@@ -445,6 +502,15 @@ class _CountSheetDetailPageState extends ConsumerState<CountSheetDetailPage> {
                     if (_loading) const LinearProgressIndicator(minHeight: 2),
                     _SheetHeader(
                         countSheetNo: widget.countSheetNo, entries: _entries),
+                    if (_inside.isNotEmpty && canRecordGateOut(ref)) ...[
+                      const SizedBox(height: 12),
+                      _GateOutVehicleButton(
+                        onPressed: _gateOutVehicle,
+                        expanded: true,
+                        label: 'Gate Out Vehicle  ·  ${_inside.length} '
+                            'invoice${_inside.length == 1 ? '' : 's'} inside',
+                      ),
+                    ],
                     const SizedBox(height: 16),
                     Text(
                       '${_entries.length} invoice${_entries.length == 1 ? '' : 's'} on this count sheet',
@@ -466,6 +532,33 @@ class _CountSheetDetailPageState extends ConsumerState<CountSheetDetailPage> {
         ),
       ),
     );
+  }
+}
+
+/// Gate out the vehicle of a count sheet (every invoice still inside).
+class _GateOutVehicleButton extends StatelessWidget {
+  const _GateOutVehicleButton({
+    required this.onPressed,
+    this.expanded = false,
+    this.label = 'Gate Out Vehicle',
+  });
+
+  final VoidCallback onPressed;
+  final bool expanded;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final button = FilledButton.icon(
+      style: FilledButton.styleFrom(
+        backgroundColor: Colors.deepOrange,
+        padding: EdgeInsets.symmetric(horizontal: 16, vertical: expanded ? 14 : 10),
+      ),
+      onPressed: onPressed,
+      icon: const Icon(Icons.logout_rounded, size: 18),
+      label: Text(label),
+    );
+    return expanded ? SizedBox(width: double.infinity, child: button) : button;
   }
 }
 

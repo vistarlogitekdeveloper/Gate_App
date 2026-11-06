@@ -442,6 +442,31 @@ class GateEntryRepositoryImpl implements GateEntryRepository {
   }
 
   @override
+  Future<ApiResponse<int>> gateOutCountSheet(String countSheetNo,
+      {String? remarks}) async {
+    try {
+      final note = remarks?.trim() ?? '';
+      final response = await _apiClient.postRaw(
+        '/gate-entries/count-sheets/${Uri.encodeComponent(countSheetNo)}/gate-out',
+        data: {if (note.isNotEmpty) 'remarks': note},
+      );
+      final data = response['data'];
+      return ApiResponse(
+        success: response['success'] == true,
+        message: response['message']?.toString() ?? '',
+        data: data is Map && data['gatedOut'] is num
+            ? (data['gatedOut'] as num).toInt()
+            : 0,
+      );
+    } catch (e) {
+      return ApiResponse(
+        success: false,
+        message: e.toString().replaceFirst('Exception: ', ''),
+      );
+    }
+  }
+
+  @override
   Future<ApiResponse<List<GateEntry>>> getCountSheetEntries(
       String countSheetNo) async {
     try {
