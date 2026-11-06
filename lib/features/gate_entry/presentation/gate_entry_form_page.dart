@@ -32,6 +32,19 @@ import 'widgets/scan_review_sheet.dart';
 import 'widgets/search_picker_dialog.dart';
 import 'count_sheet_print.dart';
 
+/// Another vendor whose goods came on the same vehicle (one count sheet).
+/// Its POs / materials feed the invoice rows that belong to it.
+class _ExtraVendor {
+  _ExtraVendor(this.code, this.name);
+
+  final String code;
+  final String name;
+  List<VendorPoMaterial> pos = const [];
+  bool loadingPos = true;
+
+  String get label => name.isNotEmpty ? '$name ($code)' : code;
+}
+
 class _ChallanFieldState {
   _ChallanFieldState({
     String initialValue = '',
@@ -60,6 +73,10 @@ class _ChallanFieldState {
   // Losing focus with a PO typed and no vendor yet looks the PO up in the
   // vendor master and fills in its vendor and material.
   final FocusNode poFocusNode;
+
+  /// The vendor of this invoice when it is not the gate entry's vendor
+  /// (section 2); null = that vendor.
+  _ExtraVendor? vendor;
 
   bool isChecking = false;
   bool? isUnique;
@@ -176,6 +193,9 @@ class _GateEntryFormPageState extends ConsumerState<GateEntryFormPage> {
   // Bumped on every load and reset, so a slow answer for a vendor that is no
   // longer selected is dropped.
   int _vendorPosSeq = 0;
+
+  // Other vendors on the same vehicle; each invoice row picks its vendor.
+  final List<_ExtraVendor> _extraVendors = [];
 
   // Challan uniqueness states
   /// Admin-only override for when the vehicle actually arrived. Null means
@@ -485,17 +505,20 @@ class _GateEntryFormPageState extends ConsumerState<GateEntryFormPage> {
   }
 
   bool _refreshLocalDuplicateErrors() {
+    // One invoice number may appear once per vendor.
+    String key(_ChallanFieldState f) =>
+        '${_codeKey(_rowVendorCode(f))}|${f.controller.text.trim()}';
     final counts = <String, int>{};
     for (final f in _challanFields) {
       final text = f.controller.text.trim();
       if (text.isEmpty) continue;
-      counts[text] = (counts[text] ?? 0) + 1;
+      counts[key(f)] = (counts[key(f)] ?? 0) + 1;
     }
 
     var hasErrors = false;
     for (final f in _challanFields) {
       final text = f.controller.text.trim();
-      if (text.isNotEmpty && (counts[text] ?? 0) > 1) {
+      if (text.isNotEmpty && (counts[key(f)] ?? 0) > 1) {
         f.localError = 'Duplicate challan in this entry';
         hasErrors = true;
       } else {
@@ -558,7 +581,7 @@ class _GateEntryFormPageState extends ConsumerState<GateEntryFormPage> {
 
     // The duplicate rule is per vendor, so a result for this invoice under a
     // different vendor code says nothing about this one: check again.
-    final vendorCode = _vendorCodeCtrl.text.trim();
+    final vendorCode = _rowVendorCode(field);
     if (field.isChecking ||
         (field.lastCheckedValue == challanNo &&
             field.lastCheckedVendor == vendorCode)) {
@@ -591,7 +614,7 @@ class _GateEntryFormPageState extends ConsumerState<GateEntryFormPage> {
       // The vendor (or the invoice) changed while this check was in flight —
       // the re-check that change asked for was skipped as "already checking",
       // so this result is stale. Drop it and check the current values.
-      if (_vendorCodeCtrl.text.trim() != vendorCode ||
+      if (_rowVendorCode(field) != vendorCode ||
           field.controller.text.trim() != challanNo) {
         field.isChecking = false;
         field.lastCheckedValue = null;
@@ -794,18 +817,33 @@ class _GateEntryFormPageState extends ConsumerState<GateEntryFormPage> {
 
   bool get _vendorChosen => _vendorCodeCtrl.text.trim().isNotEmpty;
 
-  VendorPoMaterial? _vendorPoOf(String po) {
+  // The vendor of an invoice row: its own (another vendor on the vehicle),
+  // else the gate entry's vendor from section 2.
+  String _rowVendorCode(_ChallanFieldState f) =>
+      f.vendor?.code ?? _vendorCodeCtrl.text.trim();
+  String _rowVendorName(_ChallanFieldState f) =>
+      f.vendor?.name ?? _vendorCtrl.text.trim();
+  List<VendorPoMaterial> _rowPos(_ChallanFieldState f) =>
+      f.vendor?.pos ?? _vendorPos;
+  bool _rowLoadingPos(_ChallanFieldState f) =>
+      f.vendor?.loadingPos ?? _loadingVendorPos;
+  bool _rowVendorChosen(_ChallanFieldState f) =>
+      _rowVendorCode(f).isNotEmpty;
+  bool _rowPosLoaded(_ChallanFieldState f) =>
+      f.vendor != null ? !f.vendor!.loadingPos : _vendorPosFor != null;
+
+  VendorPoMaterial? _vendorPoOf(_ChallanFieldState f, String po) {
     if (po.trim().isEmpty) return null;
-    for (final r in _vendorPos) {
+    for (final r in _rowPos(f)) {
       if (_same(r.poNumber, po)) return r;
     }
     return null;
   }
 
-  List<String> _vendorMaterials() {
+  List<String> _vendorMaterials(_ChallanFieldState f) {
     final seen = <String>{};
     final out = <String>[];
-    for (final r in _vendorPos) {
+    for (final r in _rowPos(f)) {
       final m = r.materialCode;
       if (m != null && seen.add(m.toUpperCase())) out.add(m);
     }
@@ -835,7 +873,8 @@ class _GateEntryFormPageState extends ConsumerState<GateEntryFormPage> {
       _vendorPos = rows;
       _vendorPosFor = key;
       if (clearMismatched && rows.isNotEmpty) {
-        for (final f in _challanFields) {
+        // Only the rows of this vendor -- not those of another vendor.
+        for (final f in _challanFields.where((f) => f.vendor == null)) {
           final po = f.poNumberController.text.trim();
           if (po.isNotEmpty && !rows.any((r) => _same(r.poNumber, po))) {
             f.poNumberController.clear();
@@ -859,7 +898,8 @@ class _GateEntryFormPageState extends ConsumerState<GateEntryFormPage> {
   /// also fills the vendor. [keepMaterial] leaves a material already typed.
   void _applyPo(_ChallanFieldState f, VendorPoMaterial r,
       {bool keepMaterial = false}) {
-    final fillVendor = !_vendorChosen && r.vendorCode.isNotEmpty;
+    final fillVendor =
+        f.vendor == null && !_vendorChosen && r.vendorCode.isNotEmpty;
     setState(() {
       f.poNumberController.text = r.poNumber;
       final material = r.materialCode;
@@ -885,7 +925,7 @@ class _GateEntryFormPageState extends ConsumerState<GateEntryFormPage> {
   /// PO typed by hand: an exact match of the vendor's PO fills an empty
   /// material at once.
   void _onPoTyped(_ChallanFieldState f, String value) {
-    final match = _vendorPoOf(value);
+    final match = _vendorPoOf(f, value);
     setState(() {
       if (match?.materialCode != null &&
           f.partNumberController.text.trim().isEmpty) {
@@ -898,11 +938,11 @@ class _GateEntryFormPageState extends ConsumerState<GateEntryFormPage> {
   /// that PO, fill in its vendor and material.
   Future<void> _resolveTypedPo(_ChallanFieldState f) async {
     final po = f.poNumberController.text.trim();
-    if (po.length < 3 || _vendorChosen) return;
+    if (po.length < 3 || _rowVendorChosen(f)) return;
     final rows =
         await ref.read(gateEntryRepositoryProvider).searchPurchaseOrders(po);
     if (!mounted ||
-        _vendorChosen ||
+        _rowVendorChosen(f) ||
         !_challanFields.contains(f) ||
         f.poNumberController.text.trim() != po) {
       return;
@@ -913,13 +953,13 @@ class _GateEntryFormPageState extends ConsumerState<GateEntryFormPage> {
 
   Future<void> _pickPo(_ChallanFieldState f) async {
     final repo = ref.read(gateEntryRepositoryProvider);
-    final vendorPos = _vendorPos;
+    final vendorPos = _rowPos(f);
     final material = f.partNumberController.text.trim();
-    final vendorName = _vendorCtrl.text.trim();
+    final vendorName = _rowVendorName(f);
     final picked = await showSearchPicker<VendorPoMaterial>(
       context,
       title: vendorPos.isNotEmpty
-          ? 'POs of ${vendorName.isNotEmpty ? vendorName : _vendorCodeCtrl.text.trim()}'
+          ? 'POs of ${vendorName.isNotEmpty ? vendorName : _rowVendorCode(f)}'
           : 'Find a purchase order',
       load: (q) async {
         if (vendorPos.isEmpty) return repo.searchPurchaseOrders(q);
@@ -954,12 +994,13 @@ class _GateEntryFormPageState extends ConsumerState<GateEntryFormPage> {
   }
 
   Future<void> _pickMaterial(_ChallanFieldState f) async {
-    final materials = _vendorMaterials();
-    final rowPo = _vendorPoOf(f.poNumberController.text.trim());
-    final vendorName = _vendorCtrl.text.trim();
+    final materials = _vendorMaterials(f);
+    final rowPo = _vendorPoOf(f, f.poNumberController.text.trim());
+    final vendorName = _rowVendorName(f);
+    final rowPos = _rowPos(f);
     final picked = await showSearchPicker<String>(
       context,
-      title: 'Materials of ${vendorName.isNotEmpty ? vendorName : _vendorCodeCtrl.text.trim()}',
+      title: 'Materials of ${vendorName.isNotEmpty ? vendorName : _rowVendorCode(f)}',
       load: (q) async {
         final ql = q.toLowerCase();
         final hits =
@@ -972,7 +1013,7 @@ class _GateEntryFormPageState extends ConsumerState<GateEntryFormPage> {
       },
       titleOf: (m) => m,
       subtitleOf: (m) {
-        final pos = _vendorPos.where((r) => _same(r.materialCode, m)).toList();
+        final pos = rowPos.where((r) => _same(r.materialCode, m)).toList();
         return pos.length == 1 ? 'PO ${pos.first.poNumber}' : '${pos.length} POs';
       },
       searchHint: 'Search material',
@@ -985,10 +1026,10 @@ class _GateEntryFormPageState extends ConsumerState<GateEntryFormPage> {
   /// Put a material into a row. Its PO follows when the vendor has exactly
   /// one PO for it; a PO left over for another material is cleared.
   void _applyMaterial(_ChallanFieldState f, String material) {
-    final pos = _vendorPos.where((r) => _same(r.materialCode, material)).toList();
+    final pos = _rowPos(f).where((r) => _same(r.materialCode, material)).toList();
     setState(() {
       f.partNumberController.text = material;
-      final current = _vendorPoOf(f.poNumberController.text.trim());
+      final current = _vendorPoOf(f, f.poNumberController.text.trim());
       final currentFits = current != null && _same(current.materialCode, material);
       if (!currentFits) {
         if (pos.length == 1) {
@@ -1002,41 +1043,43 @@ class _GateEntryFormPageState extends ConsumerState<GateEntryFormPage> {
 
   ({String? text, bool warn}) _poHint(_ChallanFieldState f) {
     final po = f.poNumberController.text.trim();
-    if (_loadingVendorPos) {
+    final rowPos = _rowPos(f);
+    if (_rowLoadingPos(f)) {
       return (text: 'Loading this vendor\'s POs…', warn: false);
     }
-    if (_vendorPos.isNotEmpty) {
+    if (rowPos.isNotEmpty) {
       if (po.isEmpty) {
-        final n = _vendorPos.map((r) => r.poNumber).toSet().length;
+        final n = rowPos.map((r) => r.poNumber).toSet().length;
         return (text: 'Tap ▼ to pick from $n PO${n == 1 ? '' : 's'} of this vendor', warn: false);
       }
-      if (_vendorPoOf(po) == null) {
+      if (_vendorPoOf(f, po) == null) {
         return (text: 'Not in vendor master for this vendor', warn: true);
       }
       return (text: null, warn: false);
     }
-    if (_vendorChosen && _vendorPosFor != null) {
+    if (_rowVendorChosen(f) && _rowPosLoaded(f)) {
       return po.isEmpty
           ? (text: 'No POs in vendor master for this vendor', warn: false)
           : (text: 'Not in vendor master for this vendor', warn: true);
     }
-    if (!_vendorChosen) {
+    if (!_rowVendorChosen(f)) {
       return (text: 'Tap ▼ to find a PO — it fills in the vendor', warn: false);
     }
     return (text: null, warn: false);
   }
 
   ({String? text, bool warn}) _materialHint(_ChallanFieldState f) {
-    if (_loadingVendorPos || _vendorPos.isEmpty) return (text: null, warn: false);
+    final rowPos = _rowPos(f);
+    if (_rowLoadingPos(f) || rowPos.isEmpty) return (text: null, warn: false);
     final material = f.partNumberController.text.trim();
     if (material.isEmpty) {
       return (text: 'Tap ▼ to pick from this vendor\'s materials', warn: false);
     }
-    final po = _vendorPoOf(f.poNumberController.text.trim());
+    final po = _vendorPoOf(f, f.poNumberController.text.trim());
     if (po?.materialCode != null && !_same(po!.materialCode, material)) {
       return (text: 'PO ${po.poNumber} is for material ${po.materialCode}', warn: true);
     }
-    if (!_vendorPos.any((r) => _same(r.materialCode, material))) {
+    if (!rowPos.any((r) => _same(r.materialCode, material))) {
       return (text: 'Not in vendor master for this vendor', warn: true);
     }
     return (text: null, warn: false);
@@ -1048,7 +1091,8 @@ class _GateEntryFormPageState extends ConsumerState<GateEntryFormPage> {
 
   Widget _buildPoField(_ChallanFieldState f) {
     final hint = _poHint(f);
-    final canPick = _vendorPos.isNotEmpty || !_vendorChosen;
+    final rowPos = _rowPos(f);
+    final canPick = rowPos.isNotEmpty || !_rowVendorChosen(f);
     return TextFormField(
       controller: f.poNumberController,
       focusNode: f.poFocusNode,
@@ -1060,11 +1104,11 @@ class _GateEntryFormPageState extends ConsumerState<GateEntryFormPage> {
         helperStyle: _hintStyle(hint.warn),
         suffixIcon: canPick
             ? IconButton(
-                tooltip: _vendorPos.isNotEmpty
+                tooltip: rowPos.isNotEmpty
                     ? 'Pick a PO of this vendor'
                     : 'Find a PO in the vendor master',
                 icon: const Icon(Icons.arrow_drop_down_circle_outlined),
-                onPressed: _loadingVendorPos ? null : () => _pickPo(f),
+                onPressed: _rowLoadingPos(f) ? null : () => _pickPo(f),
               )
             : null,
       ),
@@ -1083,7 +1127,7 @@ class _GateEntryFormPageState extends ConsumerState<GateEntryFormPage> {
         helperText: hint.text,
         helperMaxLines: 2,
         helperStyle: _hintStyle(hint.warn),
-        suffixIcon: _vendorPos.isNotEmpty && !_loadingVendorPos
+        suffixIcon: _rowPos(f).isNotEmpty && !_rowLoadingPos(f)
             ? IconButton(
                 tooltip: 'Pick a material of this vendor',
                 icon: const Icon(Icons.arrow_drop_down_circle_outlined),
@@ -1293,6 +1337,9 @@ class _GateEntryFormPageState extends ConsumerState<GateEntryFormPage> {
         'partNumber': field.partNumberController.text.trim(),
         'quantity': qty ?? 0,
         'uom': uom,
+        // Another vendor's invoice on the same vehicle.
+        if (field.vendor != null) 'vendorCode': field.vendor!.code,
+        if (field.vendor != null) 'vendorName': field.vendor!.name,
       });
     }
     return entries;
@@ -1626,6 +1673,10 @@ class _GateEntryFormPageState extends ConsumerState<GateEntryFormPage> {
               ),
             ),
           ],
+          if (_extraVendors.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            _buildRowVendorField(_challanFields[i]),
+          ],
           const SizedBox(height: 12),
           _buildDesktopOrMobileRow(
             TextFormField(
@@ -1745,6 +1796,165 @@ class _GateEntryFormPageState extends ConsumerState<GateEntryFormPage> {
           ],
         ),
       ],
+    );
+  }
+
+  // ── Several vendors on one vehicle ────────────────────────────────────────
+  //
+  // The vendor in section 2 is the gate entry's vendor. Goods of other
+  // vendors on the same vehicle are added here; each invoice row then says
+  // whose invoice it is, and its PO / material lists follow that vendor. All
+  // of them are saved on the one count sheet.
+
+  Future<void> _addExtraVendor() async {
+    final repo = ref.read(gateEntryRepositoryProvider);
+    final picked = await showSearchPicker<Vendor>(
+      context,
+      title: 'Add another vendor',
+      load: (q) async {
+        final r = await repo.searchVendors(q);
+        return r.success && r.data != null ? r.data! : const <Vendor>[];
+      },
+      minChars: 2,
+      hint: 'Type at least 2 letters or digits of the vendor name or code.',
+      titleOf: (v) => v.vendorName,
+      subtitleOf: (v) => 'Code ${v.vendorCode}',
+      searchHint: 'Vendor name or code',
+      emptyText: 'No vendor in the vendor master matches',
+    );
+    if (picked == null || !mounted) return;
+    final key = _codeKey(picked.vendorCode);
+    if (key.isEmpty) return;
+    if (key == _codeKey(_vendorCodeCtrl.text) ||
+        _extraVendors.any((v) => _codeKey(v.code) == key)) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        behavior: SnackBarBehavior.floating,
+        content: Text('${picked.vendorName} is already on this gate entry.'),
+      ));
+      return;
+    }
+    final vendor = _ExtraVendor(picked.vendorCode, picked.vendorName);
+    setState(() => _extraVendors.add(vendor));
+    final rows = await repo.getVendorPurchaseOrders(picked.vendorCode);
+    if (!mounted) return;
+    setState(() {
+      vendor.pos = rows;
+      vendor.loadingPos = false;
+    });
+  }
+
+  void _removeExtraVendor(_ExtraVendor vendor) {
+    setState(() {
+      _extraVendors.remove(vendor);
+      // Its invoices go back to the gate entry's vendor.
+      for (final f in _challanFields.where((f) => identical(f.vendor, vendor))) {
+        f.vendor = null;
+        f.clearRemoteState();
+      }
+      _refreshLocalDuplicateErrors();
+    });
+    _revalidateAllChallans();
+  }
+
+  void _setRowVendor(_ChallanFieldState f, _ExtraVendor? vendor) {
+    if (identical(f.vendor, vendor)) return;
+    setState(() {
+      f.vendor = vendor;
+      // A PO / material of the previous vendor does not belong here.
+      final po = f.poNumberController.text.trim();
+      if (po.isNotEmpty && _vendorPoOf(f, po) == null && _rowPos(f).isNotEmpty) {
+        f.poNumberController.clear();
+        f.partNumberController.clear();
+      }
+      f.clearRemoteState();
+      _refreshLocalDuplicateErrors();
+    });
+    final index = _challanFields.indexOf(f);
+    if (index != -1 && f.controller.text.trim().isNotEmpty) {
+      _checkSingleChallan(index);
+    }
+  }
+
+  Widget _buildRowVendorField(_ChallanFieldState f) {
+    final main = _vendorCtrl.text.trim().isNotEmpty
+        ? _vendorCtrl.text.trim()
+        : (_vendorCodeCtrl.text.trim().isNotEmpty
+            ? _vendorCodeCtrl.text.trim()
+            : 'Vendor in section 2');
+    final current = _extraVendors.contains(f.vendor) ? f.vendor : null;
+    return DropdownButtonFormField<_ExtraVendor?>(
+      key: ValueKey('row-vendor-${identityHashCode(f)}-${_extraVendors.length}'),
+      initialValue: current,
+      isExpanded: true,
+      decoration: const InputDecoration(
+        labelText: 'Vendor of this invoice',
+        prefixIcon: Icon(Icons.storefront_outlined),
+      ),
+      items: [
+        DropdownMenuItem<_ExtraVendor?>(
+          value: null,
+          child: Text(main, overflow: TextOverflow.ellipsis),
+        ),
+        for (final v in _extraVendors)
+          DropdownMenuItem<_ExtraVendor?>(
+            value: v,
+            child: Text(v.label, overflow: TextOverflow.ellipsis),
+          ),
+      ],
+      onChanged: (v) => _setRowVendor(f, v),
+    );
+  }
+
+  Widget _buildExtraVendors() {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (_extraVendors.isNotEmpty) ...[
+            Text(
+              'Other vendors on this vehicle',
+              style: theme.textTheme.labelLarge
+                  ?.copyWith(fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final v in _extraVendors)
+                  InputChip(
+                    avatar: v.loadingPos
+                        ? const SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.storefront_outlined, size: 18),
+                    label: Text(v.label),
+                    onDeleted: () => _removeExtraVendor(v),
+                    deleteButtonTooltipMessage: 'Remove this vendor',
+                  ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Pick each invoice\'s vendor under its invoice number above.',
+              style: theme.textTheme.bodySmall
+                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            ),
+            const SizedBox(height: 8),
+          ],
+          OutlinedButton.icon(
+            onPressed: _addExtraVendor,
+            icon: const Icon(Icons.add_business_outlined),
+            label: Text(_extraVendors.isEmpty
+                ? 'Add another vendor (same vehicle)'
+                : 'Add another vendor'),
+          ),
+        ],
+      ),
     );
   }
 
@@ -2014,6 +2224,7 @@ class _GateEntryFormPageState extends ConsumerState<GateEntryFormPage> {
                             },
                           ),
                         ),
+                      if (widget.initialEntry == null) _buildExtraVendors(),
                       const SizedBox(height: 16),
 
                       // Row 2: LR Number + Driver Contact No

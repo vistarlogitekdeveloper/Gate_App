@@ -128,6 +128,12 @@ class CountSheetPdfService {
     final vehicle = distinct(sorted.map((e) => e.vehicleNo));
     final vendorCode = distinct(sorted.map((e) => e.vendorCode));
     final vendorName = distinct(sorted.map((e) => e.vendorName));
+    // One vehicle may bring several vendors' invoices (one count sheet).
+    final vendorCount = sorted
+        .map((e) => _safe(e.vendorCode).isNotEmpty ? _safe(e.vendorCode).toUpperCase() : _safe(e.vendorName).toUpperCase())
+        .where((v) => v.isNotEmpty)
+        .toSet()
+        .length;
     final transporter = distinct(sorted.map((e) => e.transporterName));
     final lr = distinct(sorted.map((e) => e.lrNumber));
     final driver = distinct(sorted.map((e) => e.driverContactNo));
@@ -183,7 +189,11 @@ class CountSheetPdfService {
             invoiceCount: sorted.length,
           ),
           pw.SizedBox(height: 8),
-          _linesTable(lines: lines, rowCount: rowCount),
+          _linesTable(
+            lines: lines,
+            rowCount: rowCount,
+            showVendor: vendorCount > 1,
+          ),
           _totalsRow(
             invoiceCount: sorted.length,
             lineCount: lines.length,
@@ -456,19 +466,25 @@ class CountSheetPdfService {
 
   static const _columns = <(String, double, pw.Alignment)>[
     ('Sr.', 22, pw.Alignment.center),
-    ('Gate Entry No.', 98, pw.Alignment.centerLeft),
-    ('Put Away\nLocation', 62, pw.Alignment.center),
-    ('GRN No.', 60, pw.Alignment.center),
+    ('Gate Entry No.', 94, pw.Alignment.centerLeft),
+    ('Put Away\nLocation', 58, pw.Alignment.center),
+    ('GRN No.', 56, pw.Alignment.center),
     ('Invoice No.', 86, pw.Alignment.centerLeft),
-    ('Item Code', 84, pw.Alignment.centerLeft),
-    ('No. of Boxes x\nQty per Box', 74, pw.Alignment.center),
-    ('Box / Bin / Bag /\nPetty / Jali', 72, pw.Alignment.center),
-    ('No. of\nPallet', 44, pw.Alignment.center),
-    ('Qty', 58, pw.Alignment.centerRight),
+    ('Item Code', 82, pw.Alignment.centerLeft),
+    ('No. of Boxes x\nQty per Box', 70, pw.Alignment.center),
+    ('Box / Bin / Bag /\nPetty / Jali', 68, pw.Alignment.center),
+    ('No. of\nPallet', 40, pw.Alignment.center),
+    // The quantity on the invoice, then what is counted at the dock.
+    ('Inv Qty', 58, pw.Alignment.centerRight),
+    ('Physical\nQty', 58, pw.Alignment.center),
     ('Storage Type\n(P1 / P2 / P3)', 0, pw.Alignment.center), // takes the rest
   ];
 
-  static pw.Widget _linesTable({required List<_Line> lines, required int rowCount}) {
+  static pw.Widget _linesTable({
+    required List<_Line> lines,
+    required int rowCount,
+    bool showVendor = false,
+  }) {
     final widths = <int, pw.TableColumnWidth>{
       for (var i = 0; i < _columns.length; i++)
         i: _columns[i].$2 == 0
@@ -497,7 +513,12 @@ class CountSheetPdfService {
                         style: pw.TextStyle(
                             fontSize: size,
                             fontWeight: bold ? pw.FontWeight.bold : pw.FontWeight.normal)),
-                    pw.Text(sub, style: const pw.TextStyle(fontSize: 6.5, color: _muted)),
+                    // One line: a long vendor name must not double the row.
+                    pw.Text(sub,
+                        maxLines: 1,
+                        softWrap: false,
+                        overflow: pw.TextOverflow.clip,
+                        style: const pw.TextStyle(fontSize: 6.5, color: _muted)),
                   ],
                 ),
         );
@@ -536,7 +557,9 @@ class CountSheetPdfService {
         cell(_safe(line.entry.gateEntryNo), bold: true, size: 7.8),
         cell(''),
         cell(''),
-        cell(_safe(line.entry.challanNo), bold: true),
+        // A vehicle carrying several vendors' goods: whose invoice it is.
+        cell(_safe(line.entry.challanNo),
+            bold: true, sub: showVendor ? _safe(line.entry.vendorName) : null),
         cell(line.itemCode ?? '',
             bold: true,
             sub: (line.poNumber ?? '').isEmpty ? null : 'PO ${line.poNumber}'),
@@ -544,6 +567,7 @@ class CountSheetPdfService {
         cell(''),
         cell(''),
         cell(qtyText, align: pw.Alignment.centerRight, bold: true),
+        cell(''),
         cell(''),
       ]));
     }
@@ -591,7 +615,8 @@ class CountSheetPdfService {
       box('Total Lines:', '$lineCount'),
       box('Total Boxes:', '', write: true, flex: 2),
       box('Total Pallets:', '', write: true),
-      box('Total Qty:', _qty.format(totalQty), flex: 2),
+      box('Total Inv Qty:', _qty.format(totalQty), flex: 2),
+      box('Total Physical Qty:', '', write: true, flex: 2),
     ]);
   }
 

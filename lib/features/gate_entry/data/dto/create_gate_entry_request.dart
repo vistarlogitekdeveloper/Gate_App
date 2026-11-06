@@ -8,6 +8,8 @@ class CreateGateEntryInvoiceEntryRequest {
     required this.partNumber,
     required this.quantity,
     required this.uom,
+    this.vendorCode = '',
+    this.vendorName = '',
   });
 
   final String challanNo;
@@ -16,6 +18,10 @@ class CreateGateEntryInvoiceEntryRequest {
   final String partNumber;
   final int quantity;
   final String uom;
+  /// This invoice's own vendor, when the vehicle brings several vendors'
+  /// goods. Empty: the invoice belongs to the gate entry's vendor.
+  final String vendorCode;
+  final String vendorName;
 
   factory CreateGateEntryInvoiceEntryRequest.fromJson(
       Map<String, dynamic> json) {
@@ -27,6 +33,8 @@ class CreateGateEntryInvoiceEntryRequest {
       partNumber: (json['partNumber'] ?? json['part_number'] ?? '').toString(),
       quantity: int.tryParse((json['quantity'] ?? '0').toString()) ?? 0,
       uom: (json['uom'] ?? 'EA').toString(),
+      vendorCode: (json['vendorCode'] ?? json['vendor_code'] ?? '').toString(),
+      vendorName: (json['vendorName'] ?? json['vendor_name'] ?? '').toString(),
     );
   }
 
@@ -38,6 +46,8 @@ class CreateGateEntryInvoiceEntryRequest {
       'partNumber': partNumber,
       'quantity': quantity,
       'uom': uom,
+      if (vendorCode.trim().isNotEmpty) 'vendorCode': vendorCode.trim(),
+      if (vendorName.trim().isNotEmpty) 'vendorName': vendorName.trim(),
     };
   }
 }

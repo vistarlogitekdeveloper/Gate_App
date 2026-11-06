@@ -23,6 +23,8 @@ import '../../../core/ui/widgets/theme_toggle_button.dart';
 import '../../sap/presentation/widgets/grn_import_card.dart';
 import '../../gate_entry/presentation/controllers/gate_entry_controller.dart';
 import '../../gate_entry/presentation/gate_entry_detail_page.dart';
+import '../../gate_entry/presentation/count_sheet_gate_out.dart';
+import '../../gate_entry/presentation/count_sheets_page.dart';
 import '../../../core/ui/widgets/progress_dialog.dart';
 
 // --- Warehouse imports for Exec/Manager dashboards ---
@@ -1004,6 +1006,10 @@ class _KpiSection extends StatelessWidget {
 /// past the threshold (default 2h). Shown at the top of the security
 /// dashboard so security can chase them down -- and record the gate out
 /// straight from here once the vehicle has left.
+///
+/// One row per vehicle: the invoices of one count sheet are one vehicle and
+/// are gated out together. Older entries without a count sheet stay one row
+/// each.
 class _OverdueGateOutAlert extends ConsumerStatefulWidget {
   const _OverdueGateOutAlert({required this.metrics});
 
@@ -1014,25 +1020,86 @@ class _OverdueGateOutAlert extends ConsumerStatefulWidget {
       _OverdueGateOutAlertState();
 }
 
+/// The overdue invoices of one vehicle.
+class _OverdueVehicle {
+  _OverdueVehicle(this.key, this.countSheetNo);
+
+  final String key;
+  final String? countSheetNo;
+  final List<OverdueGateOut> entries = [];
+
+  OverdueGateOut get first => entries.first;
+
+  String get vehicleNo => entries
+      .map((e) => e.vehicleNo.trim())
+      .firstWhere((v) => v.isNotEmpty, orElse: () => '');
+
+  String get vendors {
+    final seen = <String>{};
+    return entries
+        .map((e) => e.vendorName.trim())
+        .where((v) => v.isNotEmpty && seen.add(v.toUpperCase()))
+        .join(', ');
+  }
+
+  int get minutesInside =>
+      entries.map((e) => e.minutesInside).fold(0, (a, b) => a > b ? a : b);
+
+  String get durationLabel {
+    final m = minutesInside;
+    final h = m ~/ 60;
+    return h == 0 ? '${m % 60}m' : '${h}h ${m % 60}m';
+  }
+}
+
 class _OverdueGateOutAlertState extends ConsumerState<_OverdueGateOutAlert> {
   static const _errorColor = Color(0xFFD32F2F);
   // Show at most a handful inline; the rest behind "Show all".
   static const _maxVisible = 6;
 
   bool _showAll = false;
-  // Gated out from here -- hidden at once, before the dashboard reloads.
+  // Vehicles gated out from here -- hidden at once, before the dashboard
+  // reloads.
   final Set<String> _gatedOut = {};
 
-  bool get _canGateOut {
-    final session = ref.read(sessionControllerProvider);
-    if (session is! Authenticated) return false;
-    final role = session.role;
-    return role == UserRole.gateSecurity ||
-        role == UserRole.warehouseExecutive ||
-        role.isAdminOrWarehouseManager;
+  List<_OverdueVehicle> _vehicles() {
+    final byKey = <String, _OverdueVehicle>{};
+    for (final e in widget.metrics.overdueGateOut) {
+      final sheet = (e.countSheetNo ?? '').trim();
+      final key = sheet.isNotEmpty ? 'sheet:$sheet' : 'entry:${e.id}';
+      byKey
+          .putIfAbsent(key,
+              () => _OverdueVehicle(key, sheet.isNotEmpty ? sheet : null))
+          .entries
+          .add(e);
+    }
+    // The server sends the oldest first, so the first seen leads.
+    return byKey.values.where((v) => !_gatedOut.contains(v.key)).toList();
   }
 
-  Future<void> _gateOut(OverdueGateOut v) async {
+  Future<void> _gateOut(_OverdueVehicle v) async {
+    final sheet = v.countSheetNo;
+    if (sheet != null) {
+      final done = await confirmAndGateOutCountSheet(
+        context,
+        ref,
+        countSheetNo: sheet,
+        vehicleNo: v.vehicleNo,
+        invoiceCount: v.entries.length,
+        vendors: v.vendors,
+        minutesInside: v.minutesInside,
+      );
+      if (!mounted || !done) return;
+      setState(() => _gatedOut.add(v.key));
+      ref.invalidate(dashboardControllerProvider);
+      return;
+    }
+    await _gateOutSingle(v);
+  }
+
+  /// An entry saved before count sheets existed: gated out on its own.
+  Future<void> _gateOutSingle(_OverdueVehicle group) async {
+    final v = group.first;
     final vehicle = v.vehicleNo.isEmpty ? '(no vehicle no)' : v.vehicleNo;
     final remarksController = TextEditingController();
     final proceed = await showDialog<bool>(
@@ -1100,12 +1167,14 @@ class _OverdueGateOutAlertState extends ConsumerState<_OverdueGateOutAlert> {
     final controller = ref.read(gateEntryControllerProvider.notifier);
     final ok = await runWithProgressDialog(
       context,
-      () => controller.gateOutEntry(v.id, remarks: remarks),
+      // Blank remarks are not sent: the server would store the blank.
+      () => controller.gateOutEntry(v.id,
+          remarks: remarks.isEmpty ? null : remarks),
       label: 'Recording gate out...',
     );
     if (!mounted) return;
     if (ok) {
-      setState(() => _gatedOut.add(v.id));
+      setState(() => _gatedOut.add(group.key));
       ref.invalidate(dashboardControllerProvider);
     }
     final error = ref.read(gateEntryControllerProvider).error;
@@ -1120,30 +1189,32 @@ class _OverdueGateOutAlertState extends ConsumerState<_OverdueGateOutAlert> {
     ));
   }
 
-  void _openEntry(OverdueGateOut v) {
+  void _open(_OverdueVehicle v) {
+    final sheet = v.countSheetNo;
     Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => GateEntryDetailPage(entryId: v.id),
+      builder: (_) => sheet != null
+          ? CountSheetDetailPage(countSheetNo: sheet)
+          : GateEntryDetailPage(entryId: v.first.id),
     ));
   }
 
   @override
   Widget build(BuildContext context) {
     final metrics = widget.metrics;
-    final items = metrics.overdueGateOut
-        .where((v) => !_gatedOut.contains(v.id))
-        .toList();
-    if (items.isEmpty) return const SizedBox.shrink();
+    final vehicles = _vehicles();
+    if (vehicles.isEmpty) return const SizedBox.shrink();
 
     final thresholdHours =
         (metrics.overdueGateOutThresholdMinutes / 60).toStringAsFixed(
       metrics.overdueGateOutThresholdMinutes % 60 == 0 ? 0 : 1,
     );
-    final visible = _showAll ? items : items.take(_maxVisible).toList();
-    final remaining = items.length - visible.length;
-    final canGateOut = _canGateOut;
+    final visible =
+        _showAll ? vehicles : vehicles.take(_maxVisible).toList();
+    final remaining = vehicles.length - visible.length;
+    final canGateOut = canRecordGateOut(ref);
     final narrow = isMobile(context);
 
-    Widget durationChip(OverdueGateOut v) => Container(
+    Widget durationChip(_OverdueVehicle v) => Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
           decoration: BoxDecoration(
             color: _errorColor.withValues(alpha: 0.12),
@@ -1159,7 +1230,7 @@ class _OverdueGateOutAlertState extends ConsumerState<_OverdueGateOutAlert> {
           ),
         );
 
-    Widget gateOutButton(OverdueGateOut v) => OutlinedButton.icon(
+    Widget gateOutButton(_OverdueVehicle v) => OutlinedButton.icon(
           style: OutlinedButton.styleFrom(
             foregroundColor: _errorColor,
             side: BorderSide(color: _errorColor.withValues(alpha: 0.6)),
@@ -1170,11 +1241,29 @@ class _OverdueGateOutAlertState extends ConsumerState<_OverdueGateOutAlert> {
           label: const Text('Gate Out'),
         );
 
-    Widget row(OverdueGateOut v) {
-      final hasId = v.id.isNotEmpty;
+    String detail(_OverdueVehicle v) {
+      final sheet = v.countSheetNo;
+      if (sheet != null) {
+        final n = v.entries.length;
+        return [
+          'Count Sheet $sheet',
+          '$n invoice${n == 1 ? '' : 's'}',
+          if (v.vendors.isNotEmpty) v.vendors,
+        ].join(' · ');
+      }
+      final e = v.first;
+      return [
+        if (e.gateEntryNo.isNotEmpty) e.gateEntryNo,
+        if (e.vendorName.isNotEmpty) e.vendorName,
+      ].join(' · ');
+    }
+
+    Widget row(_OverdueVehicle v) {
+      final hasId = v.first.id.isNotEmpty;
+      final text = detail(v);
       return InkWell(
         borderRadius: BorderRadius.circular(10),
-        onTap: hasId ? () => _openEntry(v) : null,
+        onTap: hasId || v.countSheetNo != null ? () => _open(v) : null,
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
           child: Row(
@@ -1190,13 +1279,10 @@ class _OverdueGateOutAlertState extends ConsumerState<_OverdueGateOutAlert> {
                       v.vehicleNo.isEmpty ? '(no vehicle no)' : v.vehicleNo,
                       style: const TextStyle(fontWeight: FontWeight.w600),
                     ),
-                    if (v.gateEntryNo.isNotEmpty || v.vendorName.isNotEmpty)
+                    if (text.isNotEmpty)
                       Text(
-                        [
-                          if (v.gateEntryNo.isNotEmpty) v.gateEntryNo,
-                          if (v.vendorName.isNotEmpty) v.vendorName,
-                        ].join(' · '),
-                        maxLines: narrow ? 2 : 1,
+                        text,
+                        maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: Theme.of(context)
                             .textTheme
@@ -1249,7 +1335,7 @@ class _OverdueGateOutAlertState extends ConsumerState<_OverdueGateOutAlert> {
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    '${items.length} vehicle${items.length == 1 ? '' : 's'} '
+                    '${vehicles.length} vehicle${vehicles.length == 1 ? '' : 's'} '
                     'not gated out within ${thresholdHours}h',
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
                           fontWeight: FontWeight.bold,
@@ -1262,8 +1348,8 @@ class _OverdueGateOutAlertState extends ConsumerState<_OverdueGateOutAlert> {
             if (canGateOut) ...[
               const SizedBox(height: 4),
               Text(
-                'Tap Gate Out once a vehicle has left; tap a row to open its '
-                'gate entry.',
+                'Gate Out marks the whole vehicle (every invoice of its count '
+                'sheet) as gone. Tap a row to see its invoices.',
                 style: Theme.of(context)
                     .textTheme
                     .bodySmall
@@ -1272,7 +1358,7 @@ class _OverdueGateOutAlertState extends ConsumerState<_OverdueGateOutAlert> {
             ],
             const SizedBox(height: 10),
             ...visible.map(row),
-            if (items.length > _maxVisible) ...[
+            if (vehicles.length > _maxVisible) ...[
               const SizedBox(height: 4),
               TextButton.icon(
                 style: TextButton.styleFrom(foregroundColor: _errorColor),
@@ -1282,7 +1368,7 @@ class _OverdueGateOutAlertState extends ConsumerState<_OverdueGateOutAlert> {
                     : Icons.expand_more_rounded),
                 label: Text(_showAll
                     ? 'Show less'
-                    : 'Show all ${items.length} (+ $remaining more)'),
+                    : 'Show all ${vehicles.length} (+ $remaining more)'),
               ),
             ],
           ],

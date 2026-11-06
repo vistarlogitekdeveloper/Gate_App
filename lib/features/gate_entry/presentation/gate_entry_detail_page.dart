@@ -24,6 +24,7 @@ import '../../warehouse/data/warehouse_repository_impl.dart';
 import '../../warehouse/domain/models/warehouse_gate_entry.dart';
 import '../../warehouse/presentation/controllers/warehouse_providers.dart';
 import '../../warehouse/presentation/warehouse_grn_create_page.dart';
+import 'count_sheet_gate_out.dart';
 
 class GateEntryDetailPage extends ConsumerWidget {
   final String entryId;
@@ -852,7 +853,10 @@ class _GateEntryDetailSecurityViewState extends ConsumerState<_GateEntryDetailSe
               child: FilledButton.icon(
                 onPressed: () => _gateOutWithRemarks(context, entry),
                 icon: const Icon(Icons.logout, size: 18),
-                label: const Text('Gate Out'),
+                // Gate out is per count sheet: the whole vehicle leaves.
+                label: Text((entry.countSheetNo ?? '').isNotEmpty
+                    ? 'Gate Out Vehicle (Count Sheet ${entry.countSheetNo})'
+                    : 'Gate Out'),
                 style: FilledButton.styleFrom(
                   backgroundColor: Colors.deepOrange,
                 ),
@@ -941,6 +945,24 @@ class _GateEntryDetailSecurityViewState extends ConsumerState<_GateEntryDetailSe
   }
 
   Future<void> _gateOutWithRemarks(BuildContext context, GateEntry entry) async {
+    // One count sheet is one vehicle: when it leaves, every invoice on the
+    // sheet is gated out together. Older entries (no count sheet) still go
+    // one by one below.
+    final sheet = (entry.countSheetNo ?? '').trim();
+    if (sheet.isNotEmpty) {
+      final gateIn = entry.gateTimestamp;
+      final done = await confirmAndGateOutCountSheet(
+        context,
+        ref,
+        countSheetNo: sheet,
+        vehicleNo: entry.vehicleNo,
+        minutesInside:
+            gateIn == null ? null : DateTime.now().difference(gateIn).inMinutes,
+      );
+      if (done && context.mounted) Navigator.of(context).pop();
+      return;
+    }
+
     // Warehouse SLA: if a vehicle has been inside for >= 120 minutes the
     // security operator must acknowledge the excessive unloading window
     // before the gate-out is recorded — this is the "empty vehicle out"
@@ -1018,7 +1040,12 @@ class _GateEntryDetailSecurityViewState extends ConsumerState<_GateEntryDetailSe
       context,
       () => ref
           .read(gateEntryControllerProvider.notifier)
-          .gateOutEntry(entry.id, remarks: remarksController.text.trim()),
+          // Blank remarks are not sent: the server would store the blank
+          // over the entry's remarks.
+          .gateOutEntry(entry.id,
+              remarks: remarksController.text.trim().isEmpty
+                  ? null
+                  : remarksController.text.trim()),
       label: 'Recording gate out...',
     );
 

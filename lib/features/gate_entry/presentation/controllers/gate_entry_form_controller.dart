@@ -37,6 +37,9 @@ class GateEntryFormController extends AsyncNotifier<void> {
               partNumber: (entry['partNumber'] ?? '').toString().trim(),
               quantity: quantity,
               uom: (entry['uom'] ?? 'EA').toString().trim().toUpperCase(),
+              // Another vendor's invoice on the same vehicle.
+              vendorCode: (entry['vendorCode'] ?? '').toString().trim(),
+              vendorName: (entry['vendorName'] ?? '').toString().trim(),
             );
           })
           .where((entry) => entry.challanNo.isNotEmpty)

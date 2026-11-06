@@ -20,6 +20,7 @@ import '../../../core/ui/widgets/theme_toggle_button.dart';
 import 'controllers/vendor_providers.dart';
 import '../domain/models/vendor.dart';
 import 'widgets/vendor_form_dialog.dart';
+import '../domain/vendor_template_service.dart';
 
 class VendorMasterPage extends ConsumerStatefulWidget {
   const VendorMasterPage({super.key});
@@ -157,6 +158,22 @@ class _VendorMasterPageState extends ConsumerState<VendorMasterPage> {
   /// Replace the purchase vendors and their POs / materials from the client's
   /// SAP export (admin only). Always previews first; nothing is written until
   /// the admin confirms a file without errors.
+  /// The empty upload sheet: Supplier code, Supplier name, Purchase order,
+  /// Material.
+  Future<void> _downloadTemplate() async {
+    try {
+      await downloadVendorTemplate();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        behavior: SnackBarBehavior.floating,
+        content: Text('Template saved: Vendor_Master_Template.xlsx -- one row '
+            'per purchase order and material.'),
+      ));
+    } catch (e) {
+      _showError('Could not save the template: $e');
+    }
+  }
+
   Future<void> _openImport() async {
     final picked = await FilePicker.platform.pickFiles(
       type: FileType.custom,
@@ -265,6 +282,12 @@ class _VendorMasterPageState extends ConsumerState<VendorMasterPage> {
           ],
         ),
         actions: [
+          if (mob)
+            IconButton(
+              tooltip: 'Download template',
+              onPressed: _downloadTemplate,
+              icon: const Icon(Icons.download_rounded),
+            ),
           if (mob && _isAdmin)
             IconButton(
               tooltip: 'Import from Excel',
@@ -312,6 +335,21 @@ class _VendorMasterPageState extends ConsumerState<VendorMasterPage> {
                   : Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
+                        // Icon only where the header is narrow, so the
+                        // title keeps its room.
+                        if (MediaQuery.sizeOf(context).width >= 1280)
+                          OutlinedButton.icon(
+                            onPressed: _downloadTemplate,
+                            icon: const Icon(Icons.download_rounded),
+                            label: const Text('Download Template'),
+                          )
+                        else
+                          IconButton.outlined(
+                            tooltip: 'Download template',
+                            onPressed: _downloadTemplate,
+                            icon: const Icon(Icons.download_rounded),
+                          ),
+                        const SizedBox(width: 12),
                         if (_isAdmin) ...[
                           OutlinedButton.icon(
                             onPressed: _openImport,

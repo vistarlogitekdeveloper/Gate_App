@@ -83,6 +83,25 @@ void main() {
     await _maybeWrite('count-sheet-other-org.pdf', bytes);
   });
 
+  test('one vehicle, several vendors: builds, with each invoice vendor', () async {
+    final entries = _entries();
+    final mixed = [
+      for (var i = 0; i < entries.length; i++)
+        i.isEven
+            ? entries[i]
+            : entries[i].copyWith(vendorCode: '919006', vendorName: 'Pondy Die Casting Pvt Ltd'),
+    ];
+    final bytes = await CountSheetPdfService.build(
+      countSheetNo: '12382',
+      entries: mixed,
+      orgCode: 'KB',
+      orgName: 'Knorr-Bremse',
+      printedBy: 'Asha Admin',
+    );
+    expect(String.fromCharCodes(bytes.take(5)), '%PDF-');
+    await _maybeWrite('count-sheet-two-vendors.pdf', bytes);
+  });
+
   test('a long sheet continues onto further pages', () async {
     final bytes = await CountSheetPdfService.build(
       countSheetNo: '12381',

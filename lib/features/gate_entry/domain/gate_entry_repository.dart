@@ -63,6 +63,11 @@ abstract class GateEntryRepository {
   /// Every gate entry saved on one count sheet.
   Future<ApiResponse<List<GateEntry>>> getCountSheetEntries(
       String countSheetNo);
+
+  /// The vehicle of a count sheet leaves: every invoice on it still inside
+  /// is gated out together. data = how many were gated out now.
+  Future<ApiResponse<int>> gateOutCountSheet(String countSheetNo,
+      {String? remarks});
   Future<ApiResponse<void>> approveGateEntry(String id);
   Future<ApiResponse<void>> closeGateEntry(String id);
   Future<ApiResponse<List<AttachmentInfo>>> getAttachments(String id);
