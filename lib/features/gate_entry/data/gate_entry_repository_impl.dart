@@ -396,6 +396,17 @@ class GateEntryRepositoryImpl implements GateEntryRepository {
   }
 
   @override
+  Future<void> giveBackCountSheet(String countSheetId) async {
+    try {
+      await _apiClient.postRaw(
+          '/gate-entries/count-sheets/reserve/${Uri.encodeComponent(countSheetId)}/give-back');
+    } catch (_) {
+      // Best effort: a number not given back is free again after the
+      // server's hold time anyway.
+    }
+  }
+
+  @override
   Future<ApiResponse<CountSheetPage>> getCountSheets({
     String? search,
     int page = 1,

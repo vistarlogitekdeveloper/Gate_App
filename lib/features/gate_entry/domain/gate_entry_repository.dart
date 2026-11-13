@@ -53,6 +53,10 @@ abstract class GateEntryRepository {
   /// reserved (offline, older server) -- the save then takes one itself.
   Future<ReservedCountSheet?> reserveCountSheet();
 
+  /// The form was closed without saving: its count sheet number goes to the
+  /// next form opened. Best effort -- never throws.
+  Future<void> giveBackCountSheet(String countSheetId);
+
   /// Count sheets that have gate entries, newest first.
   Future<ApiResponse<CountSheetPage>> getCountSheets({
     String? search,
