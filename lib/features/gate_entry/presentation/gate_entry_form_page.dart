@@ -18,6 +18,7 @@ import '../../../core/ui/responsive.dart';
 import '../../../core/ui/widgets/loading_overlay.dart';
 import '../../../core/ui/widgets/logout_action.dart';
 import '../data/gate_entry_repository_impl.dart';
+import '../domain/gate_entry_repository.dart';
 import '../domain/models/count_sheet.dart';
 import '../domain/models/gate_entry.dart';
 import '../domain/models/vendor.dart';
@@ -208,6 +209,9 @@ class _GateEntryFormPageState extends ConsumerState<GateEntryFormPage> {
   // then numbers the save itself and the success message says which.
   ReservedCountSheet? _countSheet;
   bool _reservingCountSheet = false;
+  // Kept from initState: ref cannot be used in dispose, where an unsaved
+  // form gives its number back.
+  late final GateEntryRepository _countSheetRepo;
 
   bool _allowAlphaNumericChallan = false;
   bool _isScanning = false;
@@ -227,6 +231,7 @@ class _GateEntryFormPageState extends ConsumerState<GateEntryFormPage> {
   @override
   void initState() {
     super.initState();
+    _countSheetRepo = ref.read(gateEntryRepositoryProvider);
     _vendorCodeFocusNode = FocusNode()
       ..addListener(() {
         if (_vendorCodeFocusNode.hasFocus) return;
@@ -715,6 +720,12 @@ class _GateEntryFormPageState extends ConsumerState<GateEntryFormPage> {
 
   @override
   void dispose() {
+    // Leaving Create Gate Entry: an unused count sheet number goes to the
+    // next form opened (the server ignores this once the number is saved).
+    final sheet = _countSheet;
+    if (widget.initialEntry == null && sheet != null) {
+      _countSheetRepo.giveBackCountSheet(sheet.id);
+    }
     // The recogniser holds a native model; these phones do not have memory
     // to spare for a screen nobody is on.
     OnDeviceOcr.dispose();
