@@ -136,7 +136,7 @@ class _DeletedGateEntriesPageState
               decoration: InputDecoration(
                 prefixIcon: const Icon(Icons.search),
                 hintText:
-                    'Search gate entry no, invoice, vendor, vehicle, reason…',
+                    'Search count sheet, gate entry no, invoice, vendor, vehicle, reason…',
                 border: const OutlineInputBorder(),
                 isDense: true,
                 suffixIcon: _searchCtrl.text.isEmpty
@@ -261,6 +261,25 @@ class _DeletedEntryCard extends StatelessWidget {
               _Chip(label: 'Deleted', color: error),
             ],
           ),
+          // The count sheet the entry was saved on -- a number missing from
+          // Count Sheets is found here.
+          if ((entry.countSheetNo ?? '').isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                Icon(Icons.fact_check_outlined,
+                    size: 16, color: theme.colorScheme.primary),
+                const SizedBox(width: 6),
+                Text(
+                  'Count Sheet ${entry.countSheetNo}',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: theme.colorScheme.primary,
+                  ),
+                ),
+              ],
+            ),
+          ],
           const SizedBox(height: 6),
           Wrap(
             spacing: 16,
