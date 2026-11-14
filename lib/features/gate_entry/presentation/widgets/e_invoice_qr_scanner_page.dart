@@ -6,7 +6,14 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 ///
 /// Pops `null` if the user cancels with the back button.
 class EInvoiceQrScannerPage extends StatefulWidget {
-  const EInvoiceQrScannerPage({super.key});
+  const EInvoiceQrScannerPage({super.key, this.title = 'Scan e-Invoice QR', this.typeHint});
+
+  /// The app bar title (the delivery challan scan reuses this page).
+  final String title;
+
+  /// When set, a "Type it" action lets the user key the code in instead
+  /// (no camera, or a damaged print); the hint shows in the field.
+  final String? typeHint;
 
   @override
   State<EInvoiceQrScannerPage> createState() => _EInvoiceQrScannerPageState();
@@ -38,6 +45,31 @@ class _EInvoiceQrScannerPageState extends State<EInvoiceQrScannerPage> {
     super.dispose();
   }
 
+  Future<void> _typeIt() async {
+    final controller = TextEditingController();
+    final typed = await showDialog<String>(
+      context: context,
+      builder: (d) => AlertDialog(
+        title: Text(widget.title),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          textCapitalization: TextCapitalization.characters,
+          decoration: InputDecoration(hintText: widget.typeHint),
+          onSubmitted: (v) => Navigator.of(d).pop(v),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(d).pop(), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.of(d).pop(controller.text), child: const Text('Find')),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (!mounted || typed == null || typed.trim().isEmpty || _handled) return;
+    _handled = true;
+    Navigator.of(context).pop(typed.trim());
+  }
+
   void _onDetect(BarcodeCapture capture) {
     if (_handled) return;
     final barcodes = capture.barcodes;
@@ -52,8 +84,14 @@ class _EInvoiceQrScannerPageState extends State<EInvoiceQrScannerPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Scan e-Invoice QR'),
+        title: Text(widget.title),
         actions: [
+          if (widget.typeHint != null)
+            IconButton(
+              tooltip: 'Type it',
+              icon: const Icon(Icons.keyboard_outlined),
+              onPressed: _typeIt,
+            ),
           IconButton(
             tooltip: 'Toggle torch',
             icon: const Icon(Icons.flash_on_outlined),

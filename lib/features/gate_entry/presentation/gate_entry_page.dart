@@ -21,6 +21,7 @@ import 'controllers/gate_entry_controller.dart';
 import 'count_sheets_page.dart';
 import 'gate_entry_detail_page.dart';
 import 'gate_entry_form_page.dart';
+import 'scan_dc.dart';
 
 import '../../warehouse/domain/models/warehouse_gate_entry.dart';
 import '../../warehouse/presentation/controllers/warehouse_providers.dart';
@@ -312,6 +313,19 @@ class _GateEntrySecurityViewState extends ConsumerState<_GateEntrySecurityView> 
                       label: const Text('Create Gate Entry'),
                     ),
             ),
+          // KB: a delivery challan from QR Dispatch -- scan it, open its Gate Out entry.
+          if (canScanDc(role))
+            isMob
+                ? IconButton(
+                    tooltip: 'Scan DC',
+                    icon: const Icon(Icons.qr_code_scanner),
+                    onPressed: () => scanDcAndOpen(context, ref),
+                  )
+                : TextButton.icon(
+                    onPressed: () => scanDcAndOpen(context, ref),
+                    icon: const Icon(Icons.qr_code_scanner, size: 18),
+                    label: const Text('Scan DC'),
+                  ),
           // Count sheets: one per vehicle, with all of its invoices.
           isMobile(context)
               ? IconButton(

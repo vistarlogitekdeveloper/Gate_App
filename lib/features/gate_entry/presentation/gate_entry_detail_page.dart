@@ -751,8 +751,9 @@ class _GateEntryDetailSecurityViewState extends ConsumerState<_GateEntryDetailSe
     final showClose = status == 'approved' && canClose;
     final showEdit = canEdit;
     final showDelete = role == UserRole.admin;
+    // Outward entries too (KB, 2026-11-14): QR Dispatch makes one per
+    // delivery challan and the guard gates the vehicle out on it.
     final showGateOut = entry.gateOutTimestamp == null &&
-        entry.gateMovement == GateMovement.inMovement &&
         status != 'closed' &&
         (role == UserRole.gateSecurity ||
             role == UserRole.warehouseExecutive ||
