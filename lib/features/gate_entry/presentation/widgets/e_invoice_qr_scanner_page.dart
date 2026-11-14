@@ -6,7 +6,7 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 ///
 /// Pops `null` if the user cancels with the back button.
 class EInvoiceQrScannerPage extends StatefulWidget {
-  const EInvoiceQrScannerPage({super.key, this.title = 'Scan e-Invoice QR', this.typeHint});
+  const EInvoiceQrScannerPage({super.key, this.title = 'Scan e-Invoice QR', this.typeHint, this.prompt = 'Fill the box with the e-invoice QR'});
 
   /// The app bar title (the delivery challan scan reuses this page).
   final String title;
@@ -14,6 +14,9 @@ class EInvoiceQrScannerPage extends StatefulWidget {
   /// When set, a "Type it" action lets the user key the code in instead
   /// (no camera, or a damaged print); the hint shows in the field.
   final String? typeHint;
+
+  /// The line under the camera box telling the user what to point it at.
+  final String prompt;
 
   @override
   State<EInvoiceQrScannerPage> createState() => _EInvoiceQrScannerPageState();
@@ -172,16 +175,17 @@ class _EInvoiceQrScannerPageState extends State<EInvoiceQrScannerPage> {
                   color: Colors.black.withValues(alpha: 0.6),
                   borderRadius: BorderRadius.circular(20),
                 ),
-                child: const Column(
+                child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      'Fill the box with the e-invoice QR',
-                      style: TextStyle(
+                      widget.prompt,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
                           color: Colors.white, fontWeight: FontWeight.w600),
                     ),
-                    SizedBox(height: 2),
-                    Text(
+                    const SizedBox(height: 2),
+                    const Text(
                       'Hold steady • good light • 15-25 cm distance',
                       style:
                           TextStyle(color: Colors.white70, fontSize: 12),

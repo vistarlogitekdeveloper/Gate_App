@@ -26,7 +26,11 @@ void _say(BuildContext context, String message, {bool error = false}) {
 /// challan than on the entry is shown before the entry opens.
 Future<void> scanDcAndOpen(BuildContext context, WidgetRef ref) async {
   final raw = await Navigator.of(context).push<String>(MaterialPageRoute(
-    builder: (_) => const EInvoiceQrScannerPage(title: 'Scan delivery challan', typeHint: 'DC2026000007'),
+    builder: (_) => const EInvoiceQrScannerPage(
+      title: 'Scan delivery challan',
+      typeHint: 'DC2026000007',
+      prompt: 'Fill the box with the QR on the delivery challan',
+    ),
   ));
   if (raw == null || !context.mounted) return;
   final dc = parseDcQr(raw);
