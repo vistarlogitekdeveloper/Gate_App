@@ -118,3 +118,27 @@ class CountSheetPage {
     required this.total,
   });
 }
+
+/// "Add Invoice" on a count sheet: the vehicle's details, so the Create Gate
+/// Entry form opens filled in and saves its invoices on that count sheet.
+class CountSheetAppendTarget {
+  final String countSheetNo;
+  final String vehicleNo;
+  final String vendorCode;
+  final String vendorName;
+  final String transporterName;
+  final String lrNumber;
+  final String driverContactNo;
+  final bool inward;
+
+  const CountSheetAppendTarget({
+    required this.countSheetNo,
+    this.vehicleNo = '',
+    this.vendorCode = '',
+    this.vendorName = '',
+    this.transporterName = '',
+    this.lrNumber = '',
+    this.driverContactNo = '',
+    this.inward = true,
+  });
+}

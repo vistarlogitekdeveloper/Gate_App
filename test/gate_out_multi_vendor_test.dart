@@ -87,6 +87,35 @@ void main() {
     });
   });
 
+  group('add invoice to a count sheet', () {
+    test('sends appendToCountSheet, and then never a reserved number', () {
+      CreateGateEntryRequest req({String? append, String? sheetId}) =>
+          CreateGateEntryRequest(
+            gateMovement: 'in',
+            vendorCode: 'V1',
+            vendorName: 'Alpha',
+            invoiceEntries: const [
+              CreateGateEntryInvoiceEntryRequest(
+                challanNo: 'INV-1',
+                documentDate: '2026-11-21',
+                poNumber: '',
+                partNumber: '',
+                quantity: 1,
+                uom: 'EA',
+              ),
+            ],
+            countSheetId: sheetId,
+            appendToCountSheet: append,
+          );
+      final added = req(append: '12998', sheetId: 'some-id').toJson();
+      expect(added['appendToCountSheet'], '12998');
+      expect(added.containsKey('countSheetId'), isFalse);
+      final fresh = req(sheetId: 'some-id').toJson();
+      expect(fresh['countSheetId'], 'some-id');
+      expect(fresh.containsKey('appendToCountSheet'), isFalse);
+    });
+  });
+
   group('vendor master', () {
     test('Add / Edit Vendor sends the PO list only when given', () {
       const withPos = VendorWriteRequest(
