@@ -143,9 +143,13 @@ class _ChallanFieldState {
 }
 
 class GateEntryFormPage extends ConsumerStatefulWidget {
-  const GateEntryFormPage({super.key, this.initialEntry});
+  const GateEntryFormPage({super.key, this.initialEntry, this.appendTo});
 
   final GateEntry? initialEntry;
+
+  /// "Add Invoice" on a count sheet: the new invoices go on that count sheet
+  /// (no new number), with the vehicle's details filled in.
+  final CountSheetAppendTarget? appendTo;
 
   @override
   ConsumerState<GateEntryFormPage> createState() => _GateEntryFormPageState();
@@ -284,6 +288,16 @@ class _GateEntryFormPageState extends ConsumerState<GateEntryFormPage> {
             first.challanQty.toString();
         _challanFields.first.uomController.text =
             first.uom.isNotEmpty ? first.uom : 'EA';
+        // Every further item line of this invoice, so saving keeps them (the
+        // save replaces the invoice's lines with the rows shown here).
+        for (final item in entry.items.skip(1)) {
+          _addChallanField(
+            initialPoNumber: item.poNumber,
+            initialPartNumber: item.materialCode,
+            initialQuantity: item.challanQty.toString(),
+            initialUom: item.uom.isNotEmpty ? item.uom : 'EA',
+          );
+        }
       }
       _materialCtrl.text = _materialCode;
 
@@ -304,10 +318,32 @@ class _GateEntryFormPageState extends ConsumerState<GateEntryFormPage> {
     } else {
       _materialCtrl.text = _materialCode;
       _addChallanField();
+      final target = widget.appendTo;
+      if (target != null) {
+        _vehicleCtrl.text = target.vehicleNo;
+        _transporterCtrl.text = target.transporterName;
+        _lrNumberCtrl.text = target.lrNumber;
+        _driverContactCtrl.text = target.driverContactNo;
+        _gateDirection = target.inward
+            ? GateMovement.inMovement
+            : GateMovement.outMovement;
+        if (target.vendorCode.isNotEmpty || target.vendorName.isNotEmpty) {
+          _vendorCodeCtrl.text = target.vendorCode;
+          _vendorCtrl.text = target.vendorName;
+          _isVendorFound = target.vendorName.isNotEmpty;
+          _isVendorNameReadOnly = target.vendorName.isNotEmpty;
+          _lastLookedUpVendorCode = target.vendorCode;
+          if (target.vendorCode.isNotEmpty) {
+            WidgetsBinding.instance.addPostFrameCallback(
+                (_) => _loadVendorPos(target.vendorCode));
+          }
+        }
+      }
     }
 
     _vendorCodeCtrl.addListener(_onVendorCodeChangedForValidation);
-    if (widget.initialEntry == null) {
+    // A new vehicle takes a count sheet number; adding to one does not.
+    if (widget.initialEntry == null && widget.appendTo == null) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _reserveCountSheet());
     }
   }
@@ -329,8 +365,12 @@ class _GateEntryFormPageState extends ConsumerState<GateEntryFormPage> {
   Widget _buildCountSheetBanner() {
     final theme = Theme.of(context);
     final isEdit = widget.initialEntry != null;
-    final number =
-        isEdit ? widget.initialEntry!.countSheetNo : _countSheet?.countSheetNo;
+    final appending = widget.appendTo != null;
+    final number = isEdit
+        ? widget.initialEntry!.countSheetNo
+        : appending
+            ? widget.appendTo!.countSheetNo
+            : _countSheet?.countSheetNo;
     if (isEdit && (number == null || number.isEmpty)) {
       return const SizedBox.shrink();
     }
@@ -386,14 +426,16 @@ class _GateEntryFormPageState extends ConsumerState<GateEntryFormPage> {
                   ),
                 if (!isEdit)
                   Text(
-                    'All invoices of this vehicle are saved on this count sheet.',
+                    appending
+                        ? 'Adding invoices to this vehicle\'s count sheet.'
+                        : 'All invoices of this vehicle are saved on this count sheet.',
                     style: theme.textTheme.bodySmall?.copyWith(
                         color: theme.colorScheme.onSurfaceVariant),
                   ),
               ],
             ),
           ),
-          if (!isEdit && _countSheet == null && !_reservingCountSheet)
+          if (!isEdit && !appending && _countSheet == null && !_reservingCountSheet)
             TextButton.icon(
               onPressed: _reserveCountSheet,
               icon: const Icon(Icons.refresh, size: 18),
@@ -1223,7 +1265,7 @@ class _GateEntryFormPageState extends ConsumerState<GateEntryFormPage> {
   /// would offer something that silently does nothing.
   bool get _canBackdate {
     if (!Env.enableBackdatedGateEntry) return false;
-    if (widget.initialEntry != null) return false;
+    if (widget.initialEntry != null || widget.appendTo != null) return false;
     final session = ref.read(sessionControllerProvider);
     return session is Authenticated && session.role == UserRole.admin;
   }
@@ -1409,6 +1451,9 @@ class _GateEntryFormPageState extends ConsumerState<GateEntryFormPage> {
         'remark': _remarkCtrl.text.trim(),
         // The count sheet reserved when the form opened (create only).
         if (!isEdit && _countSheet != null) 'count_sheet_id': _countSheet!.id,
+        // "Add Invoice" on a count sheet: saved on that sheet.
+        if (!isEdit && widget.appendTo != null)
+          'append_to_count_sheet': widget.appendTo!.countSheetNo,
       };
 
       // Omitted entirely unless an admin picked a date, so a normal entry is
@@ -1458,7 +1503,9 @@ class _GateEntryFormPageState extends ConsumerState<GateEntryFormPage> {
           SnackBar(
             content: Text(isEdit
                 ? 'Gate Entry successfully updated!'
-                : 'Gate Entry successfully created!$sheetNote'),
+                : widget.appendTo != null
+                    ? 'Invoice added to Count Sheet ${widget.appendTo!.countSheetNo}.'
+                    : 'Gate Entry successfully created!$sheetNote'),
             behavior: SnackBarBehavior.floating,
             backgroundColor: Colors.green,
             duration: Duration(seconds: sheetNote.isEmpty ? 4 : 6),
@@ -1557,6 +1604,9 @@ class _GateEntryFormPageState extends ConsumerState<GateEntryFormPage> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         for (var i = 0; i < _challanFields.length; i++) ...[
+          if (isEdit && i > 0)
+            _buildItemLineHeader(i)
+          else
           TextFormField(
             controller: _challanFields[i].controller,
             focusNode: _challanFields[i].focusNode,
@@ -1690,7 +1740,10 @@ class _GateEntryFormPageState extends ConsumerState<GateEntryFormPage> {
           ],
           const SizedBox(height: 12),
           _buildDesktopOrMobileRow(
-            TextFormField(
+            // One invoice date per invoice: not repeated on its item lines.
+            isEdit && i > 0
+                ? const SizedBox.shrink()
+                : TextFormField(
               controller: _challanFields[i].documentDateController,
               readOnly: true,
               onTap: () => _pickDocumentDate(_challanFields[i]),
@@ -1802,9 +1855,45 @@ class _GateEntryFormPageState extends ConsumerState<GateEntryFormPage> {
                 });
               },
               icon: const Icon(Icons.add),
-              label: const Text('Add Invoice/Challan'),
+              // Editing one invoice: another line of it. A new invoice of the
+              // vehicle is added from its count sheet.
+              label: Text(isEdit ? 'Add item line' : 'Add Invoice/Challan'),
             ),
           ],
+        ),
+        if (isEdit) ...[
+          const SizedBox(height: 6),
+          Text(
+            'To add another invoice to this vehicle, open its count sheet and '
+            'use Add Invoice.',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant),
+          ),
+        ],
+      ],
+    );
+  }
+
+  /// Editing an invoice: a further item line of it (no invoice number or
+  /// date of its own).
+  Widget _buildItemLineHeader(int i) {
+    final theme = Theme.of(context);
+    return Row(
+      children: [
+        Icon(Icons.subdirectory_arrow_right,
+            size: 20, color: theme.colorScheme.primary),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            'Item line ${i + 1} of this invoice',
+            style: theme.textTheme.titleSmall
+                ?.copyWith(fontWeight: FontWeight.w700),
+          ),
+        ),
+        IconButton(
+          tooltip: 'Remove this item line',
+          onPressed: () => _removeChallanField(i),
+          icon: const Icon(Icons.close),
         ),
       ],
     );
@@ -2023,7 +2112,9 @@ class _GateEntryFormPageState extends ConsumerState<GateEntryFormPage> {
       appBar: AppBar(
         title: Text(widget.initialEntry != null
             ? 'Edit Gate Entry'
-            : 'Create Gate Entry'),
+            : widget.appendTo != null
+                ? 'Add Invoice · Count Sheet ${widget.appendTo!.countSheetNo}'
+                : 'Create Gate Entry'),
         actions: [
           // Scan-to-autofill. Offered only when CREATING: a scan fills a
           // fresh form, and dropping a scanned challan over an entry being

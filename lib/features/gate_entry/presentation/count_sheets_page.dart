@@ -15,6 +15,7 @@ import '../domain/models/gate_entry.dart';
 import 'count_sheet_print.dart';
 import 'gate_entry_detail_page.dart';
 import 'count_sheet_gate_out.dart';
+import 'gate_entry_form_page.dart';
 
 final _dateTime = DateFormat('dd MMM yyyy, hh:mm a');
 String _fmt(DateTime? at) => at == null ? '—' : _dateTime.format(at.toLocal());
@@ -405,6 +406,28 @@ class _CountSheetDetailPageState extends ConsumerState<CountSheetDetailPage> {
     if (done && mounted) _load();
   }
 
+  /// One more invoice of this vehicle: the Create Gate Entry form, filled in
+  /// with the vehicle, saving on this count sheet.
+  Future<void> _addInvoice() async {
+    if (_entries.isEmpty) return;
+    final first = _entries.first;
+    await Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => GateEntryFormPage(
+        appendTo: CountSheetAppendTarget(
+          countSheetNo: widget.countSheetNo,
+          vehicleNo: first.vehicleNo,
+          vendorCode: first.vendorCode,
+          vendorName: first.vendorName,
+          transporterName: first.transporterName,
+          lrNumber: first.lrNumber,
+          driverContactNo: first.driverContactNo,
+          inward: first.gateMovement == GateMovement.inMovement,
+        ),
+      ),
+    ));
+    if (mounted) _load();
+  }
+
   Future<void> _openEntry(GateEntry entry) async {
     await Navigator.of(context).push(MaterialPageRoute(
       builder: (_) => GateEntryDetailPage(entryId: entry.id),
@@ -421,6 +444,19 @@ class _CountSheetDetailPageState extends ConsumerState<CountSheetDetailPage> {
       appBar: AppBar(
         title: Text('Count Sheet ${widget.countSheetNo}'),
         actions: [
+          // One more invoice of this vehicle, on this count sheet.
+          if (_entries.isNotEmpty && canRecordGateOut(ref))
+            isMobile(context)
+                ? IconButton(
+                    tooltip: 'Add invoice to this count sheet',
+                    icon: const Icon(Icons.post_add_rounded),
+                    onPressed: _addInvoice,
+                  )
+                : TextButton.icon(
+                    onPressed: _addInvoice,
+                    icon: const Icon(Icons.post_add_rounded, size: 18),
+                    label: const Text('Add Invoice'),
+                  ),
           // The Receipt and Put Away Sheet for this vehicle.
           if (_entries.isNotEmpty) ...[
             isMobile(context)

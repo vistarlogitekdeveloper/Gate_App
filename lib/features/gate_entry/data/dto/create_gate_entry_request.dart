@@ -69,6 +69,7 @@ class CreateGateEntryRequest {
     this.remark,
     this.gateTimestamp,
     this.countSheetId,
+    this.appendToCountSheet,
   });
 
   final String gateMovement;
@@ -95,6 +96,10 @@ class CreateGateEntryRequest {
   /// The count sheet reserved when the form opened. Every gate entry this
   /// save creates gets its number; without it the server takes the next one.
   final String? countSheetId;
+
+  /// "Add Invoice" on a count sheet: save on that existing count sheet
+  /// instead of taking a new number.
+  final String? appendToCountSheet;
 
   factory CreateGateEntryRequest.fromJson(Map<String, dynamic> json) {
     return CreateGateEntryRequest(
@@ -127,6 +132,8 @@ class CreateGateEntryRequest {
           _readNullableString(json, const ['gateTimestamp', 'gate_timestamp']),
       countSheetId:
           _readNullableString(json, const ['countSheetId', 'count_sheet_id']),
+      appendToCountSheet: _readNullableString(
+          json, const ['appendToCountSheet', 'append_to_count_sheet']),
     );
   }
 
@@ -144,9 +151,14 @@ class CreateGateEntryRequest {
       map['gateTimestamp'] = backdatedAt;
     }
 
-    final sheetId = countSheetId;
-    if (sheetId != null && sheetId.isNotEmpty) {
-      map['countSheetId'] = sheetId;
+    final appendTo = appendToCountSheet;
+    if (appendTo != null && appendTo.isNotEmpty) {
+      map['appendToCountSheet'] = appendTo;
+    } else {
+      final sheetId = countSheetId;
+      if (sheetId != null && sheetId.isNotEmpty) {
+        map['countSheetId'] = sheetId;
+      }
     }
 
     // The server accepts two mutually exclusive create shapes and rejects any

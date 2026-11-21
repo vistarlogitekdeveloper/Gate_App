@@ -111,6 +111,8 @@ class GateEntryFormController extends AsyncNotifier<void> {
           remark: _normalizeOptionalString(params['remark']),
           gateTimestamp: _normalizeOptionalString(params['gate_timestamp']),
           countSheetId: _normalizeOptionalString(params['count_sheet_id']),
+          appendToCountSheet:
+              _normalizeOptionalString(params['append_to_count_sheet']),
         );
 
         final created = await ref
