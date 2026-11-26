@@ -19,6 +19,7 @@ import '../auth/user_role.dart';
 import '../auth/session_state.dart';
 import '../telemetry/telemetry.dart';
 import '../ui/widgets/app_scaffold.dart';
+import '../../features/vehicle_reports/presentation/vehicles_at_gate_page.dart';
 
 /// Reports each screen the router shows to usage analytics (by route
 /// pattern; see Telemetry.screen).
@@ -111,6 +112,9 @@ final routerProvider = Provider<GoRouter>((ref) {
                 case 6:
                   context.go('/app/count-sheets');
                   break;
+                case 7:
+                  context.go('/app/at-gate');
+                  break;
               }
             },
             child: child,
@@ -141,6 +145,11 @@ final routerProvider = Provider<GoRouter>((ref) {
             path: '/app/count-sheets',
             builder: (context, state) => const CountSheetsPage(),
           ),
+          // Vehicles reported outside the gate (driver's QR form).
+          GoRoute(
+            path: '/app/at-gate',
+            builder: (context, state) => const VehiclesAtGatePage(),
+          ),
           GoRoute(
             path: '/app/deleted-gate-entries',
             builder: (context, state) => const DeletedGateEntriesPage(),
@@ -158,6 +167,7 @@ int _indexFromLocation(String location) {
   if (location.startsWith('/app/vendor-master')) return 4;
   if (location.startsWith('/app/deleted-gate-entries')) return 5;
   if (location.startsWith('/app/count-sheets')) return 6;
+  if (location.startsWith('/app/at-gate')) return 7;
   return 0;
 }
 

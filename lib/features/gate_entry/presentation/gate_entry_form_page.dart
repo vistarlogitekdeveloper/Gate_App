@@ -32,6 +32,8 @@ import 'widgets/e_invoice_qr_scanner_page.dart';
 import 'widgets/scan_review_sheet.dart';
 import 'widgets/search_picker_dialog.dart';
 import 'count_sheet_print.dart';
+import '../../vehicle_reports/data/vehicle_report_repository.dart';
+import '../../vehicle_reports/domain/vehicle_report.dart';
 
 /// Another vendor whose goods came on the same vehicle (one count sheet).
 /// Its POs / materials feed the invoice rows that belong to it.
@@ -143,13 +145,18 @@ class _ChallanFieldState {
 }
 
 class GateEntryFormPage extends ConsumerStatefulWidget {
-  const GateEntryFormPage({super.key, this.initialEntry, this.appendTo});
+  const GateEntryFormPage(
+      {super.key, this.initialEntry, this.appendTo, this.fromReport});
 
   final GateEntry? initialEntry;
 
   /// "Add Invoice" on a count sheet: the new invoices go on that count sheet
   /// (no new number), with the vehicle's details filled in.
   final CountSheetAppendTarget? appendTo;
+
+  /// Opened from the At Gate list: the driver's details fill the form, and
+  /// saving takes the vehicle off the list.
+  final VehicleReport? fromReport;
 
   @override
   ConsumerState<GateEntryFormPage> createState() => _GateEntryFormPageState();
@@ -216,6 +223,12 @@ class _GateEntryFormPageState extends ConsumerState<GateEntryFormPage> {
   // Kept from initState: ref cannot be used in dispose, where an unsaved
   // form gives its number back.
   late final GateEntryRepository _countSheetRepo;
+
+  // The vehicle's report from outside the gate (QR form), when there is one:
+  // picked from the At Gate list, or found as the vehicle number is typed.
+  VehicleReport? _vehicleReport;
+  Timer? _vehicleMatchDebounce;
+  int _vehicleMatchSeq = 0;
 
   bool _allowAlphaNumericChallan = false;
   bool _isScanning = false;
@@ -318,6 +331,15 @@ class _GateEntryFormPageState extends ConsumerState<GateEntryFormPage> {
     } else {
       _materialCtrl.text = _materialCode;
       _addChallanField();
+      final report = widget.fromReport;
+      if (report != null) {
+        _vehicleReport = report;
+        _vehicleCtrl.text = report.vehicleNo.length > 10
+            ? report.vehicleNo.substring(0, 10)
+            : report.vehicleNo;
+        _driverContactCtrl.text = report.driverContactNo;
+        _fillVendorFromReport(report);
+      }
       final target = widget.appendTo;
       if (target != null) {
         _vehicleCtrl.text = target.vehicleNo;
@@ -346,6 +368,117 @@ class _GateEntryFormPageState extends ConsumerState<GateEntryFormPage> {
     if (widget.initialEntry == null && widget.appendTo == null) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _reserveCountSheet());
     }
+  }
+
+  /// The driver's vendor, when he gave one: as if picked in the form.
+  void _fillVendorFromReport(VehicleReport report) {
+    final code = report.vendorCode ?? '';
+    final name = report.vendorName ?? '';
+    if (code.isEmpty && name.isEmpty) return;
+    _vendorCodeCtrl.text = code;
+    _vendorCtrl.text = name;
+    if (code.isNotEmpty && name.isNotEmpty) {
+      _isVendorFound = true;
+      _isVendorNameReadOnly = true;
+      _lastLookedUpVendorCode = code;
+      WidgetsBinding.instance
+          .addPostFrameCallback((_) => _loadVendorPos(code));
+    }
+  }
+
+  /// Vehicle number typed: is that vehicle waiting outside the gate?
+  void _onVehicleTyped(String value) {
+    if (widget.initialEntry != null || widget.appendTo != null) return;
+    _vehicleMatchDebounce?.cancel();
+    final vehicle = value.trim();
+    if (vehicle.length < 6) {
+      if (_vehicleReport != null && widget.fromReport == null) {
+        setState(() => _vehicleReport = null);
+      }
+      return;
+    }
+    _vehicleMatchDebounce = Timer(const Duration(milliseconds: 500), () async {
+      final seq = ++_vehicleMatchSeq;
+      final found = await ref.read(vehicleReportRepositoryProvider).match(vehicle);
+      if (!mounted || seq != _vehicleMatchSeq) return;
+      if (found?.id == _vehicleReport?.id) return;
+      setState(() => _vehicleReport = found);
+    });
+  }
+
+  /// The driver's mobile and vendor, where the form has none yet.
+  void _useDriverDetails(VehicleReport r) {
+    setState(() {
+      if (_driverContactCtrl.text.trim().isEmpty) {
+        _driverContactCtrl.text = r.driverContactNo;
+      }
+      if (_vendorCodeCtrl.text.trim().isEmpty && _vendorCtrl.text.trim().isEmpty) {
+        _fillVendorFromReport(r);
+      }
+    });
+  }
+
+  /// "Reported at the gate at 10:42 AM · waiting 1h 05m".
+  Widget _buildVehicleReportBanner() {
+    final r = _vehicleReport;
+    if (r == null) return const SizedBox.shrink();
+    final theme = Theme.of(context);
+    const green = Color(0xFF2E7D32);
+    final at = r.reportedAt;
+    final when = at == null
+        ? ''
+        : '${DateFormat('hh:mm a').format(at)}'
+            '${DateUtils.isSameDay(at, DateTime.now()) ? '' : ', ${DateFormat('dd MMM').format(at)}'}';
+    final needsFill = _driverContactCtrl.text.trim().isEmpty ||
+        (_vendorCtrl.text.trim().isEmpty && (r.vendorName ?? '').isNotEmpty);
+    return Container(
+      margin: const EdgeInsets.only(top: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: green.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: green.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.schedule_rounded, color: green),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${r.vehicleNo} reported at the gate${when.isEmpty ? '' : ' at $when'}',
+                  style: theme.textTheme.titleSmall
+                      ?.copyWith(fontWeight: FontWeight.w700, color: green),
+                ),
+                Text(
+                  [
+                    'Waiting ${r.waitedLabel}',
+                    if ((r.driverName ?? '').isNotEmpty) 'Driver ${r.driverName}',
+                    r.driverContactNo,
+                    if ((r.vendorName ?? '').isNotEmpty) r.vendorName!,
+                  ].join(' · '),
+                  style: theme.textTheme.bodySmall,
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Saving this entry takes it off the At Gate list.',
+                  style: theme.textTheme.bodySmall
+                      ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                ),
+              ],
+            ),
+          ),
+          if (needsFill)
+            TextButton(
+              onPressed: () => _useDriverDetails(r),
+              child: const Text("Use driver's details"),
+            ),
+        ],
+      ),
+    );
   }
 
   Future<void> _reserveCountSheet() async {
@@ -783,6 +916,7 @@ class _GateEntryFormPageState extends ConsumerState<GateEntryFormPage> {
     _vendorCodeCtrl.dispose();
     _lrNumberCtrl.dispose();
     _driverContactCtrl.dispose();
+    _vehicleMatchDebounce?.cancel();
     _vehicleCtrl.dispose();
     _materialCtrl.dispose();
     _poCtrl.dispose();
@@ -1454,6 +1588,9 @@ class _GateEntryFormPageState extends ConsumerState<GateEntryFormPage> {
         // "Add Invoice" on a count sheet: saved on that sheet.
         if (!isEdit && widget.appendTo != null)
           'append_to_count_sheet': widget.appendTo!.countSheetNo,
+        // The At Gate report this entry is for (it leaves the list).
+        if (!isEdit && widget.appendTo == null && _vehicleReport != null)
+          'vehicle_report_id': _vehicleReport!.id,
       };
 
       // Omitted entirely unless an admin picked a date, so a normal entry is
@@ -2405,6 +2542,7 @@ class _GateEntryFormPageState extends ConsumerState<GateEntryFormPage> {
                           ),
                           TextFormField(
                             controller: _vehicleCtrl,
+                            onChanged: _onVehicleTyped,
                             decoration: const InputDecoration(
                               labelText: 'Vehicle Number',
                               prefixIcon: Icon(Icons.numbers),
@@ -2452,6 +2590,8 @@ class _GateEntryFormPageState extends ConsumerState<GateEntryFormPage> {
                               return null;
                             },
                           )),
+                      // The vehicle reported outside the gate (QR form).
+                      _buildVehicleReportBanner(),
 
                       const SizedBox(height: 16),
                       _buildDesktopOrMobileRow(
