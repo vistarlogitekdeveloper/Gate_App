@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../auth/session_controller.dart';
 import '../../auth/session_state.dart';
 import '../../auth/user_role.dart';
+import '../../../features/vehicle_tracking/data/vtt_repository.dart';
 import '../responsive.dart';
 import '../theme.dart';
 import 'logout_action.dart';
@@ -33,11 +34,15 @@ class AppScaffold extends ConsumerWidget {
     final showReports = role != UserRole.gateSecurity;
     final showVendorMaster = role.isAdminOrWarehouseManager;
     final showDeletedEntries = role == UserRole.admin;
+    // Vehicle tracking (8): once the organisation's admin has switched it on.
+    // On the desktop sidebar the admin always sees it (to set it up).
+    final trackingOn = ref.watch(vttSettingsProvider).valueOrNull?.enabled ?? false;
     // At Gate (7) sits next to Gate Entry: vehicles waiting outside.
     final visibleIndexes = <int>[
       0,
       1,
       7,
+      if (trackingOn) 8,
       if (showReconciliation) 2,
       if (showReports) 3,
       if (showVendorMaster) 4,
@@ -65,6 +70,7 @@ class AppScaffold extends ConsumerWidget {
                   showReports: showReports,
                   showVendorMaster: showVendorMaster,
                   showDeletedEntries: showDeletedEntries,
+                  showTracking: trackingOn || role == UserRole.admin,
                   authed: session is Authenticated ? session : null,
                 ),
                 // Wrap the routed child in a fresh transparent Material so
@@ -96,6 +102,7 @@ class AppScaffold extends ConsumerWidget {
         showReports: showReports,
         showVendorMaster: showVendorMaster,
         showDeletedEntries: showDeletedEntries,
+        showTracking: trackingOn,
         onSelected: (i) => onSelect(visibleIndexes[i]),
       ),
     );
@@ -108,6 +115,7 @@ class _MobileNavBar extends StatelessWidget {
   final bool showReports;
   final bool showVendorMaster;
   final bool showDeletedEntries;
+  final bool showTracking;
   final ValueChanged<int> onSelected;
 
   const _MobileNavBar({
@@ -116,8 +124,15 @@ class _MobileNavBar extends StatelessWidget {
     required this.showReports,
     required this.showVendorMaster,
     required this.showDeletedEntries,
+    required this.showTracking,
     required this.onSelected,
   });
+
+  int get _itemCount =>
+      3 +
+      [showTracking, showReconciliation, showReports, showVendorMaster, showDeletedEntries]
+          .where((shown) => shown)
+          .length;
 
   @override
   Widget build(BuildContext context) {
@@ -142,6 +157,11 @@ class _MobileNavBar extends StatelessWidget {
         child: NavigationBar(
           selectedIndex: selectedIndex,
           onDestinationSelected: onSelected,
+          // An admin's bar holds up to 8 items: then only the selected one
+          // shows its label, so the rest do not wrap.
+          labelBehavior: _itemCount > 6
+              ? NavigationDestinationLabelBehavior.onlyShowSelected
+              : NavigationDestinationLabelBehavior.alwaysShow,
           backgroundColor: Colors.transparent,
           surfaceTintColor: Colors.transparent,
           indicatorColor: VistarTokens.pink.withValues(alpha: 0.16),
@@ -161,6 +181,12 @@ class _MobileNavBar extends StatelessWidget {
               selectedIcon: Icon(Icons.departure_board_rounded),
               label: 'At Gate',
             ),
+            if (showTracking)
+              const NavigationDestination(
+                icon: Icon(Icons.route_outlined),
+                selectedIcon: Icon(Icons.route_rounded),
+                label: 'Trips',
+              ),
             if (showReconciliation)
               const NavigationDestination(
                 icon: Icon(Icons.rule_folder_outlined),
@@ -199,6 +225,7 @@ class _DesktopSidebar extends StatelessWidget {
   final bool showReports;
   final bool showVendorMaster;
   final bool showDeletedEntries;
+  final bool showTracking;
   final Authenticated? authed;
 
   const _DesktopSidebar({
@@ -208,6 +235,7 @@ class _DesktopSidebar extends StatelessWidget {
     required this.showReports,
     required this.showVendorMaster,
     required this.showDeletedEntries,
+    required this.showTracking,
     required this.authed,
   });
 
@@ -308,6 +336,14 @@ class _DesktopSidebar extends StatelessWidget {
                   isSelected: selectedIndex == 7,
                   onTap: () => onSelect(7),
                 ),
+                if (showTracking)
+                  _SidebarItem(
+                    icon: Icons.route_outlined,
+                    activeIcon: Icons.route_rounded,
+                    label: 'Vehicle Tracking',
+                    isSelected: selectedIndex == 8,
+                    onTap: () => onSelect(8),
+                  ),
                 _SidebarItem(
                   icon: Icons.fact_check_outlined,
                   activeIcon: Icons.fact_check_rounded,
