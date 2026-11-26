@@ -70,6 +70,7 @@ class CreateGateEntryRequest {
     this.gateTimestamp,
     this.countSheetId,
     this.appendToCountSheet,
+    this.vehicleReportId,
   });
 
   final String gateMovement;
@@ -100,6 +101,10 @@ class CreateGateEntryRequest {
   /// "Add Invoice" on a count sheet: save on that existing count sheet
   /// instead of taking a new number.
   final String? appendToCountSheet;
+
+  /// The "At Gate" report (driver's QR form) this entry is for; it then
+  /// leaves the waiting list.
+  final String? vehicleReportId;
 
   factory CreateGateEntryRequest.fromJson(Map<String, dynamic> json) {
     return CreateGateEntryRequest(
@@ -134,6 +139,8 @@ class CreateGateEntryRequest {
           _readNullableString(json, const ['countSheetId', 'count_sheet_id']),
       appendToCountSheet: _readNullableString(
           json, const ['appendToCountSheet', 'append_to_count_sheet']),
+      vehicleReportId: _readNullableString(
+          json, const ['vehicleReportId', 'vehicle_report_id']),
     );
   }
 
@@ -149,6 +156,11 @@ class CreateGateEntryRequest {
     final backdatedAt = gateTimestamp;
     if (backdatedAt != null && backdatedAt.isNotEmpty) {
       map['gateTimestamp'] = backdatedAt;
+    }
+
+    final reportId = vehicleReportId;
+    if (reportId != null && reportId.isNotEmpty) {
+      map['vehicleReportId'] = reportId;
     }
 
     final appendTo = appendToCountSheet;

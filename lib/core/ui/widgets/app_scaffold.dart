@@ -33,9 +33,11 @@ class AppScaffold extends ConsumerWidget {
     final showReports = role != UserRole.gateSecurity;
     final showVendorMaster = role.isAdminOrWarehouseManager;
     final showDeletedEntries = role == UserRole.admin;
+    // At Gate (7) sits next to Gate Entry: vehicles waiting outside.
     final visibleIndexes = <int>[
       0,
       1,
+      7,
       if (showReconciliation) 2,
       if (showReports) 3,
       if (showVendorMaster) 4,
@@ -153,6 +155,11 @@ class _MobileNavBar extends StatelessWidget {
               icon: Icon(Icons.local_shipping_outlined),
               selectedIcon: Icon(Icons.local_shipping_rounded),
               label: 'Gate Entry',
+            ),
+            const NavigationDestination(
+              icon: Icon(Icons.departure_board_outlined),
+              selectedIcon: Icon(Icons.departure_board_rounded),
+              label: 'At Gate',
             ),
             if (showReconciliation)
               const NavigationDestination(
@@ -293,6 +300,13 @@ class _DesktopSidebar extends StatelessWidget {
                   label: 'Gate Entry',
                   isSelected: selectedIndex == 1,
                   onTap: () => onSelect(1),
+                ),
+                _SidebarItem(
+                  icon: Icons.departure_board_outlined,
+                  activeIcon: Icons.departure_board_rounded,
+                  label: 'Vehicles at Gate',
+                  isSelected: selectedIndex == 7,
+                  onTap: () => onSelect(7),
                 ),
                 _SidebarItem(
                   icon: Icons.fact_check_outlined,
