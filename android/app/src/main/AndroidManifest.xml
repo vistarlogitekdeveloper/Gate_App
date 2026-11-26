@@ -9,7 +9,7 @@
         android:maxSdkVersion="28"/>
 
     <application
-        android:label="gate_app"
+        android:label="Vistar Gate"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:largeHeap="true">
