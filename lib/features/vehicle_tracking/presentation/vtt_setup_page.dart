@@ -163,7 +163,8 @@ class _VttSetupPageState extends ConsumerState<VttSetupPage> with SingleTickerPr
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'A trip starts at the first checkpoint and ends at the last. Drag to change the order. '
+            'A trip starts at the first checkpoint and ends at the last. Change the order with the ↑ ↓ arrows '
+            'or by dragging ⠿ (⋮ also has Move to first / last). '
             'Mandatory checkpoints must be recorded before any after them; optional ones may be passed by.',
             style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
           ),
@@ -218,44 +219,67 @@ class _VttSetupPageState extends ConsumerState<VttSetupPage> with SingleTickerPr
               ],
             ),
       itemCount: active.length,
-      onReorderItem: (oldIndex, newIndex) {
-        final list = [...active];
-        list.insert(newIndex, list.removeAt(oldIndex));
-        setState(() => _checkpoints = [...list, ..._inactive]);
-        _do(() => _repo.reorderCheckpoints(list.map((c) => c.id).toList()), done: 'Order saved');
-      },
+      onReorderItem: _move,
       itemBuilder: (context, i) {
         final c = active[i];
+        final last = i == active.length - 1;
         return Card(
           key: ValueKey(c.id),
           margin: const EdgeInsets.only(bottom: 8),
           child: ListTile(
-            leading: ReorderableDragStartListener(
-              index: i,
-              child: CircleAvatar(
-                radius: 16,
-                backgroundColor: theme.colorScheme.primary.withValues(alpha: 0.12),
-                child: Text('${i + 1}', style: TextStyle(color: theme.colorScheme.primary, fontWeight: FontWeight.w800)),
-              ),
+            leading: CircleAvatar(
+              radius: 16,
+              backgroundColor: theme.colorScheme.primary.withValues(alpha: 0.12),
+              child: Text('${i + 1}', style: TextStyle(color: theme.colorScheme.primary, fontWeight: FontWeight.w800)),
             ),
             title: Text(c.name, style: const TextStyle(fontWeight: FontWeight.w700)),
-            subtitle: Text(_checkpointSubtitle(c, first: i == 0)),
+            subtitle: Text(_checkpointSubtitle(c, first: i == 0, last: last && active.length > 1)),
             isThreeLine: true,
             onTap: () => _editCheckpoint(c),
-            trailing: PopupMenuButton<String>(
-              enabled: !_busy,
-              onSelected: (v) => switch (v) {
-                'edit' => _editCheckpoint(c),
-                'users' => _editUsers(c),
-                'targets' => _editTargets(c, first: i == 0),
-                'remove' => _removeCheckpoint(c),
-                _ => null,
-              },
-              itemBuilder: (_) => [
-                const PopupMenuItem(value: 'edit', child: Text('Edit')),
-                const PopupMenuItem(value: 'users', child: Text('Who records it')),
-                if (i > 0) const PopupMenuItem(value: 'targets', child: Text('Target time')),
-                PopupMenuItem(value: 'remove', child: Text(c.used ? 'Switch off' : 'Delete')),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  tooltip: 'Move up',
+                  icon: const Icon(Icons.arrow_upward_rounded),
+                  onPressed: _busy || i == 0 ? null : () => _move(i, i - 1),
+                ),
+                IconButton(
+                  tooltip: 'Move down',
+                  icon: const Icon(Icons.arrow_downward_rounded),
+                  onPressed: _busy || last ? null : () => _move(i, i + 1),
+                ),
+                ReorderableDragStartListener(
+                  index: i,
+                  enabled: !_busy,
+                  child: const Tooltip(
+                    message: 'Drag to move',
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 6),
+                      child: Icon(Icons.drag_indicator_rounded),
+                    ),
+                  ),
+                ),
+                PopupMenuButton<String>(
+                  enabled: !_busy,
+                  onSelected: (v) => switch (v) {
+                    'edit' => _editCheckpoint(c),
+                    'users' => _editUsers(c),
+                    'targets' => _editTargets(c, first: i == 0),
+                    'top' => _move(i, 0),
+                    'bottom' => _move(i, active.length - 1),
+                    'remove' => _removeCheckpoint(c),
+                    _ => null,
+                  },
+                  itemBuilder: (_) => [
+                    const PopupMenuItem(value: 'edit', child: Text('Edit')),
+                    const PopupMenuItem(value: 'users', child: Text('Who records it')),
+                    if (i > 0) const PopupMenuItem(value: 'targets', child: Text('Target time')),
+                    if (i > 0) const PopupMenuItem(value: 'top', child: Text('Move to first (starts the trip)')),
+                    if (!last) const PopupMenuItem(value: 'bottom', child: Text('Move to last (ends the trip)')),
+                    PopupMenuItem(value: 'remove', child: Text(c.used ? 'Switch off' : 'Delete')),
+                  ],
+                ),
               ],
             ),
           ),
@@ -264,7 +288,18 @@ class _VttSetupPageState extends ConsumerState<VttSetupPage> with SingleTickerPr
     );
   }
 
-  String _checkpointSubtitle(VttCheckpoint c, {bool first = false}) {
+  /// Move the active checkpoint at [from] to position [to] and save the order.
+  void _move(int from, int to) {
+    final list = [..._active];
+    if (from == to || from < 0 || from >= list.length || to < 0 || to >= list.length) return;
+    final moved = list.removeAt(from);
+    list.insert(to, moved);
+    setState(() => _checkpoints = [...list, ..._inactive]);
+    _do(() => _repo.reorderCheckpoints(list.map((c) => c.id).toList()),
+        done: '${moved.name} is now number ${to + 1}');
+  }
+
+  String _checkpointSubtitle(VttCheckpoint c, {bool first = false, bool last = false}) {
     final target = c.defaultTarget;
     final own = c.targets.where((t) => t.categoryId != null).length;
     return [
@@ -273,6 +308,7 @@ class _VttSetupPageState extends ConsumerState<VttSetupPage> with SingleTickerPr
         vttKinds[c.kind] ?? c.kind,
         c.isMandatory ? 'Mandatory' : 'Optional',
         if (first) 'Starts the trip',
+        if (last) 'Ends the trip',
       ].join(' · '),
       [
         c.autoSource == null ? 'Recorded by a tap' : 'Filled by ${vttAutoSources[c.autoSource]?.toLowerCase()}',
