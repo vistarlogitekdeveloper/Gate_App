@@ -5,6 +5,7 @@ import '../../../core/auth/session_state.dart';
 import '../../../core/network/api_client.dart';
 import '../../../core/network/dio_provider.dart';
 import '../domain/stock_models.dart';
+import '../domain/stock_report.dart';
 
 final stockRepositoryProvider = Provider<StockRepository>(
   (ref) => StockRepository(ref.read(apiClientProvider)),
@@ -93,6 +94,36 @@ class StockRepository {
           for (final e in data.entries)
             if (e.value is Map<String, dynamic>) e.key.toString(): StockTotals.fromJson(e.value as Map<String, dynamic>),
         };
+      });
+
+  /// A stock report: inward / outward between [from] and [to], or the
+  /// balance as of [asOf] (now when null; [openOnly]: lines with stock left).
+  Future<StockReportResult> report(
+    StockReportKind kind, {
+    DateTime? from,
+    DateTime? to,
+    DateTime? asOf,
+    String? search,
+    bool openOnly = false,
+  }) =>
+      _call(() async {
+        final res = await _api.getRaw('/stock/reports/${kind.apiKind}', queryParameters: {
+          if (from != null) 'from': from.toUtc().toIso8601String(),
+          if (to != null) 'to': to.toUtc().toIso8601String(),
+          if (asOf != null) 'asOf': asOf.toUtc().toIso8601String(),
+          if (search != null && search.trim().isNotEmpty) 'q': search.trim(),
+          if (openOnly) 'open': '1',
+        });
+        final data = _map(res);
+        final rows = data['rows'] is List
+            ? (data['rows'] as List).whereType<Map<String, dynamic>>().toList()
+            : <Map<String, dynamic>>[];
+        return StockReportResult(
+          rows: rows,
+          truncated: data['truncated'] == true,
+          maxRows: data['maxRows'] is num ? (data['maxRows'] as num).toInt() : rows.length,
+          asOf: DateTime.tryParse((data['asOf'] ?? '').toString())?.toLocal(),
+        );
       });
 
   Future<StockSheet> countSheet(String countSheetNo) => _call(() async =>

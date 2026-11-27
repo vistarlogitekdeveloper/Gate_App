@@ -14,6 +14,12 @@ import '../data/reports_repository_impl.dart';
 import '../domain/models/report_models.dart';
 import '../domain/models/exception_report_item.dart';
 import '../domain/services/report_export_service.dart';
+import '../../../core/auth/session_controller.dart';
+import '../../../core/auth/session_state.dart';
+import '../../../core/auth/user_role.dart';
+import '../../stock/data/stock_repository.dart';
+import '../../stock/domain/stock_report.dart';
+import '../../stock/presentation/stock_reports_page.dart';
 
 // Shared once-allocated DateFormat instances. Constructing DateFormat is
 // expensive (pattern parse + intl symbol alloc) — doing it once per row
@@ -205,6 +211,10 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
   // Debounced search keeps each keystroke from refetching the API.
   String _searchQuery = '';
   Timer? _searchDebounce;
+
+  // Stock reports open their own page (StockReportsPage); bumping this key
+  // puts the dropdown back on the report shown here.
+  int _typeFieldKey = 0;
 
   final List<String> _reportTypes = [
     'Gate Entry Register',
@@ -813,6 +823,16 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
   }
 
   Widget _buildFilterToolbar(BuildContext context, bool isMob, String dateText) {
+    // Stock reports: when the organisation has Stock & dispatch on, for
+    // managers and admins (the server allows the same).
+    final session = ref.watch(sessionControllerProvider);
+    final role = session is Authenticated ? session.role : null;
+    final stockOn = ref.watch(stockSettingsProvider).valueOrNull?.enabled ?? false;
+    final stockReports = <String, StockReportKind>{
+      if (stockOn && role.isAdminOrWarehouseManager)
+        for (final k in StockReportKind.values) k.short: k,
+    };
+    final typeOptions = [..._reportTypes, ...stockReports.keys];
     InputDecoration inputStyle(String hint, IconData icon) {
       return InputDecoration(
         hintText: hint,
@@ -886,10 +906,11 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
                   children: [
                     Expanded(
                       child: DropdownButtonFormField<String>(
+                        key: ValueKey('report-type-$_typeFieldKey'),
                         initialValue: _selectedReport,
                         isExpanded: true,
                         decoration: inputStyle('Type', Icons.analytics),
-                        selectedItemBuilder: (context) => _reportTypes
+                        selectedItemBuilder: (context) => typeOptions
                             .map((t) => Align(
                                   alignment: Alignment.centerLeft,
                                   child: Text(
@@ -899,11 +920,18 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
                                   ),
                                 ))
                             .toList(),
-                        items: _reportTypes
+                        items: typeOptions
                             .map((t) => DropdownMenuItem(value: t, child: Text(t)))
                             .toList(),
                         onChanged: (val) {
                           if (val == null) return;
+                          final stockKind = stockReports[val];
+                          if (stockKind != null) {
+                            setState(() => _typeFieldKey++);
+                            Navigator.of(context).push(MaterialPageRoute(
+                                builder: (_) => StockReportsPage(initial: stockKind)));
+                            return;
+                          }
                           setState(() {
                             _selectedReport = val;
                             _gateEntryCardFilter = _reportAllFilter;

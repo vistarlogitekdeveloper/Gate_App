@@ -12,6 +12,10 @@ import '../data/stock_repository.dart';
 import '../domain/stock_models.dart';
 import 'dispatch_page.dart';
 import 'stock_sheet_page.dart';
+import 'stock_reports_page.dart';
+import '../../../core/auth/session_controller.dart';
+import '../../../core/auth/session_state.dart';
+import '../../../core/auth/user_role.dart';
 import 'stock_widgets.dart';
 
 /// Stock: count sheets with what was received, dispatched and is left. Tick
@@ -168,6 +172,8 @@ class _StockScreenState extends ConsumerState<StockScreen> {
     final canDispatch = settings?.canDispatch ?? false;
     final picked = _picked.values.toList();
     final pickedQty = picked.fold<double>(0, (s, l) => s + l.balance);
+    final session = ref.watch(sessionControllerProvider);
+    final canReport = session is Authenticated && session.role.isAdminOrWarehouseManager;
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -183,6 +189,12 @@ class _StockScreenState extends ConsumerState<StockScreen> {
               itemBuilder: (_) => [
                 PopupMenuItem(value: 'toggle', child: Text(enabled ? 'Switch off Stock & dispatch' : 'Switch on Stock & dispatch')),
               ],
+            ),
+          if (enabled && canReport)
+            IconButton(
+              tooltip: 'Stock reports',
+              icon: const Icon(Icons.summarize_outlined),
+              onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const StockReportsPage())),
             ),
           if (enabled)
             IconButton(tooltip: 'Refresh', onPressed: _loading ? null : _load, icon: const Icon(Icons.refresh_rounded)),
