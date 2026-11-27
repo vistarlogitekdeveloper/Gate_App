@@ -16,6 +16,10 @@ import 'count_sheet_print.dart';
 import 'gate_entry_detail_page.dart';
 import 'count_sheet_gate_out.dart';
 import 'gate_entry_form_page.dart';
+import '../../stock/data/stock_repository.dart';
+import '../../stock/domain/stock_models.dart';
+import '../../stock/presentation/stock_sheet_page.dart';
+import '../../stock/presentation/stock_widgets.dart';
 
 final _dateTime = DateFormat('dd MMM yyyy, hh:mm a');
 String _fmt(DateTime? at) => at == null ? '—' : _dateTime.format(at.toLocal());
@@ -49,6 +53,8 @@ class _CountSheetsPageState extends ConsumerState<CountSheetsPage> {
   String? _error;
   CountSheetPage? _result;
   int _requestSeq = 0;
+  // Stock & dispatch (when the organisation has it on): per count sheet.
+  Map<String, StockTotals> _stock = const {};
 
   @override
   void initState() {
@@ -78,12 +84,27 @@ class _CountSheetsPageState extends ConsumerState<CountSheetsPage> {
       _loading = false;
       if (response.success && response.data != null) {
         _result = response.data;
+        _loadStock(seq, response.data!.sheets.map((s) => s.countSheetNo).toList());
       } else {
         _error = response.message.isNotEmpty
             ? response.message
             : 'Could not load count sheets.';
       }
     });
+  }
+
+  /// Received / dispatched / balance of the listed sheets; quietly nothing
+  /// when stock is off or the call fails (the list works as before).
+  Future<void> _loadStock(int seq, List<String> nos) async {
+    final settings = await ref.read(stockSettingsProvider.future);
+    if (settings == null || !settings.enabled || nos.isEmpty) {
+      if (mounted && _stock.isNotEmpty) setState(() => _stock = const {});
+      return;
+    }
+    try {
+      final stock = await ref.read(stockRepositoryProvider).summary(nos);
+      if (mounted && seq == _requestSeq) setState(() => _stock = stock);
+    } catch (_) {}
   }
 
   void _onSearchChanged(String value) {
@@ -191,6 +212,14 @@ class _CountSheetsPageState extends ConsumerState<CountSheetsPage> {
                   padding: const EdgeInsets.only(bottom: 12),
                   child: _CountSheetCard(
                     sheet: sheet,
+                    stock: _stock[sheet.countSheetNo],
+                    onStock: _stock[sheet.countSheetNo] == null
+                        ? null
+                        : () async {
+                            await Navigator.of(context).push(MaterialPageRoute(
+                                builder: (_) => StockSheetPage(countSheetNo: sheet.countSheetNo)));
+                            if (mounted) _load();
+                          },
                     onTap: () => openCountSheet(context, sheet.countSheetNo),
                     onPrint: () =>
                         printCountSheet(context, ref, sheet.countSheetNo),
@@ -241,9 +270,13 @@ class _CountSheetCard extends StatelessWidget {
     required this.onTap,
     required this.onPrint,
     this.onGateOut,
+    this.stock,
+    this.onStock,
   });
 
   final CountSheetSummary sheet;
+  final StockTotals? stock;
+  final VoidCallback? onStock;
   final VoidCallback onTap;
   final VoidCallback onPrint;
   final VoidCallback? onGateOut;
@@ -320,6 +353,25 @@ class _CountSheetCard extends StatelessWidget {
               'By ${sheet.createdBy}',
               style: theme.textTheme.bodySmall
                   ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            ),
+          ],
+          if (stock != null) ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: StockTotalsRow(
+                      received: stock!.received,
+                      dispatched: stock!.dispatched,
+                      balance: stock!.balance,
+                      dense: true),
+                ),
+                TextButton.icon(
+                  onPressed: onStock,
+                  icon: const Icon(Icons.inventory_2_outlined, size: 18),
+                  label: const Text('Stock'),
+                ),
+              ],
             ),
           ],
           if (onGateOut != null) ...[
