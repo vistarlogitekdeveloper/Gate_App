@@ -170,6 +170,31 @@ class ReportExportService {
   }) async =>
       _savePdf(await _buildVehicleTatPdfBytes(data, onProgress: onProgress),
           'Vehicle_TAT_Report.pdf');
+
+  /// Any table as an .xlsx (stock reports). Numbers stay numbers.
+  Future<void> exportTableToExcel({
+    required String fileName,
+    required String sheetName,
+    required List<String> headers,
+    required List<List<Object?>> rows,
+    ExportProgress? onProgress,
+  }) =>
+      _saveSheet((sheetName: sheetName, headers: headers, rows: rows), fileName,
+          onProgress);
+
+  /// Any table as a landscape PDF. Callers cap [rows] at [pdfRowLimit] and
+  /// say so.
+  Future<void> exportTableToPdf({
+    required String fileName,
+    required String title,
+    required List<String> headers,
+    required List<List<String>> rows,
+    ExportProgress? onProgress,
+  }) async =>
+      _savePdf(
+          await _renderTablePdf(
+              title: title, headers: headers, rows: rows, onProgress: onProgress),
+          fileName);
 }
 
 // ---------------------------------------------------------------------------
